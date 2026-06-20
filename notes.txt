@@ -1,0 +1,22 @@
+In traditional queues, the broker pushes messages to consumers and deletes them the moment they are acknowledged.
+In our log-structured architecture, the server treats messages as a permanent, read-only history log. The server doesn't care who is reading or how fast they are reading. The consumer is entirely in the driver's seat. It is responsible for pulling data and tracking its own position
+
+
+put related data in same paritition and assign a thread(consumer) from the consumer group to a fixed partition, so no two consumers read from the same partition at the same time.
+
+
+As the message will be of variable lengths, we need to store the offest to byte mapping in a .index file.
+So when a consumer tell the server to give data from offset X, the server will look up the byte offset in the .index file and return the data from that offset.
+
+
+Producer will produce a entry for a topic
+1. Get the partition for the topic (topic/parition_i)
+2. Append the entry to the partition log
+3. Update the .index file with the new offset to byte mapping
+
+
+
+
+----------------------------------- NEW THINGS THAT I LEARNED -------------------------------
+1. Why not directly store the struct in the log file and do serialization/deserialization?
+- Our processor used little endian byte order to store data but the network byte order is big endian.
