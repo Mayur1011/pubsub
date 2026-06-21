@@ -14,11 +14,11 @@ struct Record {
 };
 
 struct RecordBatch {
-    uint8_t batchStart;          // identifies the start of the batch
-    uint64_t baseOffset;         // base offset of the batch
-    uint32_t batchLen;           // length of the batch
-    uint64_t timeStamp;          // timestamp of the batch
-    uint32_t numRecords;         // number of records in the batch
+    uint8_t batchStart;  // identifies the start of the batch
+    uint64_t baseOffset; // base offset of the batch (this is not byte position in the file it a temp ID for the batch)
+    uint32_t batchLen;   // length of the batch
+    uint64_t timeStamp;  // timestamp of the batch
+    uint32_t numRecords; // number of records in the batch
     std::vector<Record> records; // records in the batch
 };
 
