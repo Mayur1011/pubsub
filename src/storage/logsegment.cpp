@@ -1,7 +1,7 @@
+#include "storage/indexFile.hpp"
 #include "storage/logsegment.hpp"
 #include "storage/record.hpp"
 
-#include <algorithm>
 #include <fcntl.h>
 #include <iomanip>
 #include <sstream>
@@ -11,33 +11,26 @@
 #include <unistd.h>
 
 namespace pubsub::storage {
-LogSegment::LogSegment(uint64_t _firstRecordOffset, uint32_t _flushInterval, const std::string &_segmentDir) {
-    firstRecordOffset = _firstRecordOffset;
-    flushInterval = _flushInterval;
-    bytesWrittenSinceLastIdxEntry = INDEX_INTERVAL;
+LogSegment::LogSegment(uint64_t _firstRecordOffset, uint32_t _flushInterval, const std::string &_segmentDir)
+    : logFD(-1), idxFile(_segmentDir + "/" + getFileName(_firstRecordOffset, "index")),
+      firstRecordOffset(_firstRecordOffset), logFileSize(0), indexFileSize(0),
+      bytesWrittenSinceLastIdxEntry(INDEX_INTERVAL), flushInterval(_flushInterval) {
     std::string logFilePath = _segmentDir + "/" + getFileName(firstRecordOffset, "log");
-    std::string indexFilePath = _segmentDir + "/" + getFileName(firstRecordOffset, "index");
     logFD = open(logFilePath.c_str(), O_RDWR | O_CREAT, 0644);
-    indexFD = open(indexFilePath.c_str(), O_RDWR | O_CREAT, 0644);
-    if (logFD == -1 || indexFD == -1) {
-        throw std::runtime_error("[logsegment]: Failed to open log or index file");
+    if (logFD == -1) {
+        throw std::runtime_error("[logsegment]: Failed to open log file");
     }
     struct stat st;
-    if (fstat(logFD, &st) == -1 || fstat(indexFD, &st) == -1) {
+    if (fstat(logFD, &st) == -1) {
         throw std::runtime_error("[logsegment]: Failed to get file size");
     }
     logFileSize = st.st_size;
-    indexFileSize = st.st_size;
 }
 
 LogSegment::~LogSegment() {
     if (logFD != -1) {
         fdatasync(logFD);
         close(logFD);
-    }
-    if (indexFD != -1) {
-        fdatasync(indexFD);
-        close(indexFD);
     }
 }
 
@@ -54,13 +47,7 @@ void LogSegment::appendToLog(RecordBatch &recordBatch) {
         throw std::runtime_error("[logsegment]: Failed to write record batch to log file");
     }
     if (bytesWrittenSinceLastIdxEntry >= INDEX_INTERVAL) {
-        SparseIndex entry;
-        entry.baseOffset = recordBatch.baseOffset;
-        entry.byteOffset = logFileSize;
-        ssize_t bytesWrittenIDX = pwrite(indexFD, &entry, sizeof(entry), indexFileSize);
-        if (bytesWrittenIDX != sizeof(SparseIndex))
-            throw std::runtime_error("[logsegment]: Failed to write entry in .index file");
-        indexFileSize += sizeof(SparseIndex);
+        idxFile.append(recordBatch.baseOffset, logFileSize);
         bytesWrittenSinceLastIdxEntry = 0;
     }
     bytesWrittenSinceLastIdxEntry += serializedBatch.size();
@@ -78,23 +65,10 @@ void LogSegment::appendToLog(RecordBatch &recordBatch) {
 bool LogSegment::readFromLog(uint64_t offset, Record &outRecord) {
     if (indexFileSize == 0)
         return false;
-    void *mmapIdxPtr = mmap(nullptr, indexFileSize, PROT_READ, MAP_SHARED, indexFD, 0);
-    if (mmapIdxPtr == MAP_FAILED)
-        throw std::runtime_error("[logsegment]: Failed to mmap .index file");
-    SparseIndex *sparseIndex = reinterpret_cast<SparseIndex *>(mmapIdxPtr);
-    size_t numEntries = indexFileSize / sizeof(SparseIndex);
-
-    auto it = std::upper_bound(sparseIndex, sparseIndex + numEntries, offset,
-                               [](uint64_t offset, const SparseIndex &currval) { return currval.baseOffset < offset; });
-    if (it != sparseIndex)
-        --it;
-    else {
-        munmap(mmapIdxPtr, indexFileSize);
+    int64_t currPtr = idxFile.lookup(offset);
+    if (currPtr == -1)
         return false;
-    }
-    uint64_t currPtr = it->byteOffset;
-    munmap(mmapIdxPtr, indexFileSize);
-    while (currPtr < logFileSize) {
+    while ((uint64_t)currPtr < logFileSize) {
         uint32_t currBatchLen;
         // first 9 bytes are batchStart and baseOffset
         if (pread(logFD, &currBatchLen, sizeof(uint32_t), currPtr + 9) != sizeof(uint32_t))
@@ -117,4 +91,5 @@ bool LogSegment::readFromLog(uint64_t offset, Record &outRecord) {
     return false;
 }
 
+uint64_t LogSegment::size() { return logFileSize; }
 } // namespace pubsub::storage

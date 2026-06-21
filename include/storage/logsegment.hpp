@@ -1,13 +1,15 @@
 #pragma once
 
+#include "storage/indexFile.hpp"
 #include "storage/record.hpp"
 #include <cstdint>
 #include <string>
 
 namespace pubsub::storage {
 class LogSegment {
-    int logFD;                              // file descriptor for .log file
-    int indexFD;                            // file descriptor for .index file for the .log file
+    int logFD;         // file descriptor for .log file
+    IndexFile idxFile; // index file for the .log file
+    // int indexFD;                            // file descriptor for .index file for the .log file
     uint64_t firstRecordOffset;             // offset or first batch in this .log file
     uint64_t logFileSize;                   // size of the .log file in bytes
     uint64_t indexFileSize;                 // size of the .index file in bytes
@@ -15,7 +17,6 @@ class LogSegment {
     uint32_t flushInterval;                 // after how many records we should flush the .log file
                                             // on disk (initially it is stored in page cache of RAM)
     uint32_t batchesWrittenSinceLastFlush;
-
     std::string getFileName(uint64_t offset, const std::string &fileExtension);
 
   public:
@@ -27,5 +28,6 @@ class LogSegment {
     ~LogSegment();
     void appendToLog(RecordBatch &recordBatch);
     bool readFromLog(uint64_t recordOffset, Record &record);
+    uint64_t size();
 };
 } // namespace pubsub::storage

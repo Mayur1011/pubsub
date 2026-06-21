@@ -25,8 +25,8 @@ struct RecordBatch {
 // This will be store in .index file (Each partition will have a separate .index
 // file)
 struct SparseIndex {
-    uint64_t baseOffset; // base offset of the record batch
-    uint64_t byteOffset; // byte offset of the record batch in the .log file
+    uint64_t baseOffset;   // base offset of the record batch
+    uint64_t bytePosition; // byte offset of the record batch in the .log file
 };
 
 std::vector<uint8_t> serializeRecordBatch(const RecordBatch &batch);

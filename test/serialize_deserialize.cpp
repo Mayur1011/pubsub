@@ -1,15 +1,13 @@
-#include <iostream>
 #include <cassert>
-#include <vector>
+#include <iostream>
 #include <string>
+#include <vector>
 
 #include "storage/record.hpp"
 
 using namespace pubsub::storage;
 
 void testSerialization() {
-    std::cout << "--- Starting Serialization Test ---\n";
-
     // 1. Create a dummy batch
     RecordBatch originalBatch;
     originalBatch.batchStart = 0xAB;
@@ -69,7 +67,7 @@ void testSerialization() {
 int main() {
     try {
         testSerialization();
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::cerr << "Test failed with exception: " << e.what() << '\n';
         return 1;
     }
