@@ -23,5 +23,7 @@ class IndexFile {
     void append(uint64_t baseOffset, uint64_t bytePosition);
     int64_t lookup(uint64_t offset);
     size_t getNumEntries();
+    bool getLastEntry(IndexEntry *indexEntry);
+    size_t getIdxFileSize();
 };
 } // namespace pubsub::storage

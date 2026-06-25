@@ -80,4 +80,14 @@ int64_t IndexFile::lookup(uint64_t offset) {
     return static_cast<int64_t>(it->bytePosition);
 }
 size_t IndexFile::getNumEntries() { return fileSize / sizeof(IndexEntry); }
+
+bool IndexFile::getLastEntry(IndexEntry *indexEntry) {
+    if (fileSize == 0)
+        return false;
+    size_t numEntries = fileSize / sizeof(IndexEntry);
+    const IndexEntry *entries = reinterpret_cast<const IndexEntry *>(mmapBasePtr);
+    *indexEntry = entries[numEntries - 1];
+    return true;
+}
+size_t IndexFile::getIdxFileSize() { return fileSize; }
 } // namespace pubsub::storage
