@@ -16,7 +16,23 @@ Producer will produce a entry for a topic
 
 
 
+1. Network Card ----> Receives raw TCP bytes from client.
+2. Server Layer ----> Parses Request Header, extracts ProducePayload (raw vector bytes).
+3. Server Layer ----> Calls the Phase 1 deserializeRecordBatch(payload.rawRecordBatch).
+4. Storage Layer ----> Calls Partition::append(batch).
+                        - Overwrites batch.baseOffset with nextRecordOffset.
+                        - Advances nextRecordOffset by batch.numRecords.
+                        - Calls serializeRecordBatch(batch) to get final corrected bytes.
+                        - Appends those bytes to the active .log file.
 
------------------------------------ NEW THINGS THAT I LEARNED -------------------------------
-1. Why not directly store the struct in the log file and do serialization/deserialization?
-- Our processor used little endian byte order to store data but the network byte order is big endian.
+
+1. Why not directly store the struct in the log file and do serialization/deserialization? Our processor used little endian byte order to store data but the network byte order is big endian.
+2. in epoll kernel wakes up the managing thread in event loop when there is some work to dos. so a single thread can handle multiple connections concurrently.
+
+------------------------------------------------------------------------------------------------------
+1. i have written the logic to serialize and deserialize the structs so i can store the serialized data in the .log file
+2. Now each partition will have multiple segments (easy to search) as we can skip segments if out record is not in that segment. Also easier to delete records easily if we modularize them.
+we are giving an illusion that we are storing everything in a single .log file but we make segments for easy access to records.
+Now i have done with the storage part i can store RecordBatches in segment file and read them using the index files
+
+Now moving to networking part so the client can send RecordBatches to the server and the server can store them in the .log file.
