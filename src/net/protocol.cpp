@@ -44,6 +44,7 @@ ProducePayload deserializeProducePayload(const std::vector<uint8_t> &buffer, siz
     ProducePayload payload;
     // same like above the net buffer contains a 2-byte length prefix for the topic name
     uint16_t topicLen = readFromNetBuffer<uint16_t>(buffer, offset);
+    std::cout << "[net/protocol] topicLen: " << topicLen << "\n";
     if (offset + topicLen > buffer.size()) {
         throw std::runtime_error("[net/protocol]: Corrupted Topic length in Produce payload");
     }

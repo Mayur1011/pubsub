@@ -110,7 +110,7 @@ bool Partition::read(uint64_t offset, Record &record) {
         return false;
     }
     --it;
-    std::cout << "[partition]: Reading from segment starting at offset " << (*it)->getFirstRecordOffset() << "\n";
+    // std::cout << "[partition]: Reading from segment starting at offset " << (*it)->getFirstRecordOffset() << "\n";
     return (*it)->readFromLog(offset, record);
 }
 } // namespace pubsub::storage

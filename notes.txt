@@ -27,7 +27,33 @@ Producer will produce a entry for a topic
 
 
 1. Why not directly store the struct in the log file and do serialization/deserialization? Our processor used little endian byte order to store data but the network byte order is big endian.
-2. in epoll kernel wakes up the managing thread in event loop when there is some work to dos. so a single thread can handle multiple connections concurrently.
+2. in epoll kernel wakes up the managing thread in event loop when there is some work to dos. so a single thread can handle multiple connections concurrently. epoll does not change the number of sockets. It changes how you wait for events on those sockets.
+               +----------------+
+               |   accept()      |
+               +--------+--------+
+                        |
+                 New client socket
+                        |
+                        v
+                Register with epoll
+                        |
+        +---------------+---------------+
+        |               |               |
+      fd4             fd5            fd6
+        \               |              /
+         \              |             /
+          +--------------------------+
+          |      epoll_wait()        |
+          |     (1-4 I/O threads)    |
+          +--------------------------+
+                     |
+         --------------------------
+         |                        |
+   Simple request          Heavy computation
+         |                        |
+     send reply             Thread Pool
+                                   |
+                            send reply later
 
 ------------------------------------------------------------------------------------------------------
 1. i have written the logic to serialize and deserialize the structs so i can store the serialized data in the .log file

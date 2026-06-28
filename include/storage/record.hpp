@@ -29,6 +29,8 @@ struct SparseIndex {
     uint64_t bytePosition; // byte offset of the record batch in the .log file
 };
 
+std::vector<uint8_t> serializeRecord(const Record &record);
+Record deserializeRecord(const std::vector<uint8_t> &data);
 std::vector<uint8_t> serializeRecordBatch(const RecordBatch &batch);
 RecordBatch deserializeRecordBatch(const std::vector<uint8_t> &data);
 
