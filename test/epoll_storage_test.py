@@ -56,18 +56,21 @@ def main():
         raw_batch = build_phase1_record_batch([message_text])
         req = create_produce_request(corr_id=i, topic=topic_name, batch_bytes=raw_batch)
         s.sendall(req)
+        print(f"✅ Sent batch {i}")
 
         resp_header = s.recv(10)  # 4 bytes len, 4 bytes corrId, 2 bytes error
+        print(f"✅ Received response for batch {i}")
+
         if len(resp_header) < 10:
             print(
                 "❌ Dropped connection or corrupted protocol response on batch append."
             )
             sys.exit(1)
-
     print("✅ 1000 Messages written to storage engine. Verifying FETCH retrieval...")
 
     fetch_req = create_fetch_request(corr_id=9999, topic=topic_name, offset=0)
     s.sendall(fetch_req)
+    print("✅ Sent FETCH request")
 
     response_data = s.recv(65536)
     print(

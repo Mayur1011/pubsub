@@ -55,6 +55,8 @@ Producer will produce a entry for a topic
                                    |
                             send reply later
 
+cool, now i have a epoll server handling incoming connections and sending/receiving data. But i cant rely on epoll loop as it will be blocked waiting for my disk write and reads. I need to add threads.
+
 ------------------------------------------------------------------------------------------------------
 1. i have written the logic to serialize and deserialize the structs so i can store the serialized data in the .log file
 2. Now each partition will have multiple segments (easy to search) as we can skip segments if out record is not in that segment. Also easier to delete records easily if we modularize them.

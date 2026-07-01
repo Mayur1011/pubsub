@@ -59,8 +59,10 @@ void LogSegment::appendToLog(RecordBatch &recordBatch) {
     }
     batchesWrittenSinceLastFlush++;
     logFileSize += serializedBatch.size();
-    std::cerr << "[logsegment]: currentBatchSize= " << serializedBatch.size() << " logFileSize= " << logFileSize
-              << std::endl;
+    bytesWrittenSinceLastIdxEntry += serializedBatch.size();
+    // std::cerr << "[logsegment]: currentBatchSize= " << serializedBatch.size() << " logFileSize= " << logFileSize
+    //           << std::endl;
+    // pwrite usually writes to page cache, fdatasync flushes to disk
     if (batchesWrittenSinceLastFlush >= flushInterval) {
         fdatasync(logFD);
         batchesWrittenSinceLastFlush = 0;
