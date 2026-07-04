@@ -1,7 +1,7 @@
 #pragma once
 // this mangages the segments for a single partition
 
-#include "storage/logsegment.hpp"
+#include "storage/logSegment.hpp"
 #include "storage/record.hpp"
 #include <filesystem>
 #include <memory>
@@ -21,7 +21,7 @@ class Partition {
     static const uint64_t SEGMENT_SIZE_LIMIT = 100 * 1024 * 1024;
     Partition(const std::string &baseDir);
     ~Partition() = default;
-    void append(RecordBatch &recordBatch);
+    void append(const RecordBatch &recordBatch);
     bool read(uint64_t offset, Record &record);
 };
 } // namespace pubsub::storage

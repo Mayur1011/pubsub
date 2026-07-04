@@ -1,6 +1,7 @@
 #include "storage/indexFile.hpp"
 #include "storage/logsegment.hpp"
 #include "storage/partition.hpp"
+#include "storage/record.hpp"
 #include <algorithm>
 #include <cstdint>
 #include <fcntl.h>
@@ -88,12 +89,14 @@ void Partition::createNewSegment(uint64_t newBaseOffset) {
     segments.push_back(std::move(new_seg));
 }
 
-void Partition::append(RecordBatch &recordBatch) {
+void Partition::append(const RecordBatch &recordBatch) {
     // std::cout << "[Partition]: Appending batch of " << recordBatch.numRecords << " records starting at offset " <<
     // nextRecordOffset << "\n";
-    recordBatch.baseOffset = nextRecordOffset;
-    nextRecordOffset += recordBatch.numRecords;
-    currentSegment->appendToLog(recordBatch);
+    //
+    RecordBatch recordBatchCopy = recordBatch;
+    recordBatchCopy.baseOffset = nextRecordOffset;
+    nextRecordOffset += recordBatchCopy.numRecords;
+    currentSegment->appendToLog(recordBatchCopy);
     if (currentSegment->getLogFileSize() >= SEGMENT_SIZE_LIMIT) {
         createNewSegment(nextRecordOffset);
     }

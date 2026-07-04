@@ -1,22 +1,27 @@
+#include "concurrency/workerPool.hpp"
 #include "net/connBuff.hpp"
 #include "net/protocol.hpp"
 #include "storage/partition.hpp"
 #include "storage/record.hpp"
 #include <asm-generic/socket.h>
 #include <cerrno>
+#include <cstdint>
 #include <cstring>
 #include <fcntl.h>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <vector>
 
 using namespace pubsub::net;
 
 std::unique_ptr<pubsub::storage::Partition> currPartition;
+std::unique_ptr<pubsub::concurrency::WorkerPool> currWorkerPool;
 
 // const is not validated at compile time, constexpr is.
 constexpr int MAX_EVENTS = 32; // epoll_wait will return at most 32 events at once
@@ -25,6 +30,8 @@ constexpr int MAX_EVENTS = 32; // epoll_wait will return at most 32 events at on
 struct ClientState {
     int fd;
     ConnectionBuffer buffer;
+    std::mutex outBufferMutex;
+    std::queue<std::vector<uint8_t>> outBuffer;
     explicit ClientState(int socket_fd) : fd(socket_fd) {}
 };
 
@@ -33,7 +40,27 @@ struct ClientState {
 //     fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 // }
 
-void process_frame(ClientState *conn, std::vector<uint8_t> &frame_vec) {
+void sendResponse(ClientState *conn, int epollFD) {
+    std::lock_guard<std::mutex> lock(conn->outBufferMutex);
+    while (not conn->outBuffer.empty()) {
+        std::vector<uint8_t> &response = conn->outBuffer.front();
+        ssize_t bytesSend = send(conn->fd, response.data(), response.size(), 0);
+        if (bytesSend == -1) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                return;
+            }
+            std::cerr << "[net/server] send failed: " << strerror(errno) << "\n";
+            return;
+        }
+        conn->outBuffer.pop();
+    }
+    epoll_event epollEvent;
+    epollEvent.data.fd = conn->fd;
+    epollEvent.events = EPOLLIN | EPOLLET;
+    epoll_ctl(epollFD, EPOLL_CTL_MOD, conn->fd, &epollEvent);
+}
+
+void process_frame(ClientState *conn, std::vector<uint8_t> &frame_vec, int epollFD) {
     size_t offset = 4; // first 4 bytes are FrameLength
     try {
         RequestHeader header = deserializeRequestHeader(frame_vec, offset);

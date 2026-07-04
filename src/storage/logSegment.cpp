@@ -1,5 +1,5 @@
 #include "storage/indexFile.hpp"
-#include "storage/logsegment.hpp"
+#include "storage/logSegment.hpp"
 #include "storage/record.hpp"
 
 #include <fcntl.h>
