@@ -21,7 +21,6 @@ class WorkerThread {
     void dispatchRequest(const DiskRequest &request) {
         auto it = assignedPartitions.find(request.partitionID);
         if (it == assignedPartitions.end()) {
-            std::cerr << "[concurrency/workerPool]: Partition " << request.partitionID << " not found\n";
             request.sendResponse(pubsub::net::serializeResponse(
                 request.correlationID, net::ErrorCode::PARTITION_NOT_FOUND, std::vector<uint8_t>()));
             return;
@@ -30,8 +29,9 @@ class WorkerThread {
         if (request.type == TaskType::PRODUCE) {
             try {
                 partition->append(request.produceBatch);
-                request.sendResponse(pubsub::net::serializeResponse(request.correlationID, net::ErrorCode::NONE,
-                                                                    std::vector<uint8_t>()));
+                std::vector<uint8_t> serializedResponse =
+                    pubsub::net::serializeResponse(request.correlationID, net::ErrorCode::NONE, std::vector<uint8_t>());
+                request.sendResponse(serializedResponse);
             } catch (const std::exception &e) {
                 std::cerr << "[concurrency/workerPool]: Failed to append to partition " << request.partitionID << ": "
                           << e.what() << "\n";
@@ -105,6 +105,7 @@ class WorkerPool {
     // epoll thread will call this to drop requests onto the correct worker
     void routeRequest(DiskRequest req) {
         uint32_t worker_id = req.partitionID % workers.size();
+        std::cerr << "[concurreny/WorkerPool] routing request to worker " << worker_id << "\n";
         workers[worker_id]->submitRequest(std::move(req));
     }
 

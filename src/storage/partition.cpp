@@ -1,5 +1,4 @@
 #include "storage/indexFile.hpp"
-#include "storage/logsegment.hpp"
 #include "storage/partition.hpp"
 #include "storage/record.hpp"
 #include <algorithm>

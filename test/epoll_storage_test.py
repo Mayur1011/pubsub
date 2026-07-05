@@ -58,10 +58,10 @@ def main():
         s.sendall(req)
         print(f"✅ Sent batch {i}")
 
-        resp_header = s.recv(10)  # 4 bytes len, 4 bytes corrId, 2 bytes error
+        resp_header = s.recv(9)  # 4 bytes len, 4 bytes corrId, 2 bytes error
         print(f"✅ Received response for batch {i}")
 
-        if len(resp_header) < 10:
+        if len(resp_header) < 9:
             print(
                 "❌ Dropped connection or corrupted protocol response on batch append."
             )

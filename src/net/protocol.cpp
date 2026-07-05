@@ -1,4 +1,5 @@
 #include "net/protocol.hpp"
+#include <cstdint>
 #include <cstring>
 #include <iostream>
 #include <stdexcept>
@@ -44,7 +45,7 @@ ProducePayload deserializeProducePayload(const std::vector<uint8_t> &buffer, siz
     ProducePayload payload;
     // same like above the net buffer contains a 2-byte length prefix for the topic name
     uint16_t topicLen = readFromNetBuffer<uint16_t>(buffer, offset);
-    std::cout << "[net/protocol] topicLen: " << topicLen << "\n";
+    // std::cout << "[net/protocol] topicLen: " << topicLen << "\n";
     if (offset + topicLen > buffer.size()) {
         throw std::runtime_error("[net/protocol]: Corrupted Topic length in Produce payload");
     }
@@ -77,7 +78,7 @@ std::vector<uint8_t> serializeResponse(uint32_t correlationId, ErrorCode errorCo
     std::vector<uint8_t> responseBuffer;
     writeToNetBuffer<uint32_t>(responseBuffer, 0);
     writeToNetBuffer<uint32_t>(responseBuffer, correlationId);
-    writeToNetBuffer<uint16_t>(responseBuffer, static_cast<uint16_t>(errorCode));
+    writeToNetBuffer<uint8_t>(responseBuffer, static_cast<uint8_t>(errorCode));
     // Sending the response payload immediately after the header
     if (!payload.empty()) {
         responseBuffer.insert(responseBuffer.end(), payload.begin(), payload.end());
