@@ -1,8 +1,9 @@
-#include "net/protocol.hpp"
 #include <cstdint>
 #include <cstring>
 #include <iostream>
 #include <stdexcept>
+
+#include "net/protocol.hpp"
 
 namespace pubsub::net {
 template <typename T> T readFromNetBuffer(const std::vector<uint8_t> &buffer, size_t &offset) {

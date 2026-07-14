@@ -1,9 +1,3 @@
-#include "concurrency/diskRequest.hpp"
-#include "concurrency/workerPool.hpp"
-#include "net/connBuff.hpp"
-#include "net/protocol.hpp"
-#include "storage/partition.hpp"
-#include "storage/record.hpp"
 #include <asm-generic/socket.h>
 #include <cerrno>
 #include <cstdint>
@@ -19,6 +13,13 @@
 #include <unistd.h>
 #include <utility>
 #include <vector>
+
+#include "concurrency/diskRequest.hpp"
+#include "concurrency/workerPool.hpp"
+#include "net/connBuff.hpp"
+#include "net/protocol.hpp"
+#include "storage/partition.hpp"
+#include "storage/record.hpp"
 
 using namespace pubsub::net;
 

@@ -1,17 +1,18 @@
 #pragma once
 
-#include "concurrency/diskQueue.hpp"
-#include "concurrency/diskRequest.hpp"
-#include "net/protocol.hpp"
-#include "storage/partition.hpp"
-#include "storage/record.hpp"
 #include <cstdint>
 #include <iostream>
 #include <sys/socket.h>
 #include <thread>
 #include <unordered_map>
-namespace pubsub::concurrency {
 
+#include "concurrency/diskQueue.hpp"
+#include "concurrency/diskRequest.hpp"
+#include "net/protocol.hpp"
+#include "storage/partition.hpp"
+#include "storage/record.hpp"
+
+namespace pubsub::concurrency {
 // a worker thread will managed fixed number of partitions. so no two worker threads will manage the same partition.
 class WorkerThread {
     std::jthread thread;
