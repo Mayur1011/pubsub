@@ -20,10 +20,11 @@
 #include "net/protocol.hpp"
 #include "storage/partition.hpp"
 #include "storage/record.hpp"
+#include "storage/topicManager.hpp"
 
 using namespace pubsub::net;
 
-std::unique_ptr<pubsub::storage::Partition> currPartition;
+std::unique_ptr<pubsub::storage::TopicManager> currTopicManager;
 std::unique_ptr<pubsub::concurrency::WorkerPool> currWorkerPool;
 
 // const is not validated at compile time, constexpr is.
@@ -70,16 +71,27 @@ void process_frame(ClientState *conn, std::vector<uint8_t> &frame_vec, int epoll
         pubsub::concurrency::DiskRequest diskRequest;
         diskRequest.partitionID = 0; // hardcoded for now
         diskRequest.correlationID = header.correlationId;
-        diskRequest.clientFD = conn->fd;
+        diskRequest.clientFD = conn->fd; // dont need to send this as we are now using callback (sending for debugging)
         if (header.requestType == RequestType::PRODUCE) {
             ProducePayload reqPayload = deserializeProducePayload(frame_vec, offset);
-            // std::cout << "[net/server] PRODUCE from " << header.clientId << " on " << reqPayload.topic << "\n";
+            std::cout << "[net/server] PRODUCE from " << header.clientId << " on " << reqPayload.topic << "\n";
             diskRequest.type = pubsub::concurrency::TaskType::PRODUCE;
+            diskRequest.topicName = reqPayload.topic;
+            diskRequest.partitionID = reqPayload.partitionID;
             diskRequest.produceBatch = pubsub::storage::deserializeRecordBatch(reqPayload.rawRecordBatch);
         } else if (header.requestType == RequestType::FETCH) {
             FetchPayload reqPayload = deserializeFetchPayload(frame_vec, offset);
             diskRequest.type = pubsub::concurrency::TaskType::FETCH;
+            diskRequest.topicName = reqPayload.topic;
+            diskRequest.partitionID = reqPayload.partitionID;
             diskRequest.fetchOffset = reqPayload.fetchOffset;
+        }
+        if (currTopicManager->getPartition(diskRequest.topicName, diskRequest.partitionID) == nullptr) {
+            std::cerr << "[net/server] Rejecting request: Topic/Partition target not found: " << diskRequest.topicName
+                      << ":" << diskRequest.partitionID << "\n";
+            auto response = serializeResponse(header.correlationId, ErrorCode::UNKNOWN_SERVER_ERROR, {});
+            send(conn->fd, response.data(), response.size(), 0);
+            return;
         }
         // std::vector<uint8_t> empty_payload;
         // auto response = serializeResponse(header.correlationId, ErrorCode::NONE, empty_payload);
@@ -142,16 +154,32 @@ void handleEpollReads(ClientState *conn, int epollFD) {
 
 int main() {
     try {
-        std::cout << "[net/server]: Initialzing storage partition...\n";
-        currPartition = std::make_unique<pubsub::storage::Partition>("./data_storage");
-        std::cout << "[net/server]: Storage partition initialized.\n";
+        std::cout << "[net/server]: Initialzing topic manager...\n";
+        currTopicManager = std::make_unique<pubsub::storage::TopicManager>("./data");
+        std::cout << "[net/server]: Topic manager initialized.\n";
     } catch (const std::exception &e) {
-        std::cerr << "[net/server]: Failed to initialize storage partition: " << e.what() << '\n';
+        std::cerr << "[net/server]: Failed to initialize topic manager: " << e.what() << '\n';
         return 1;
     }
     currWorkerPool = std::make_unique<pubsub::concurrency::WorkerPool>(5);
     currWorkerPool->start();
-    currWorkerPool->registerPartition(0, currPartition.get());
+
+    std::cout << "[net/server]: Worker pool initialized.\n";
+    std::cout << "[net/server]: Registering partitions...\n";
+    std::cout << "[net/server]: Recovering partitions...\n";
+    std::vector<pubsub::storage::RecoveryInfo> recoveryInfo = currTopicManager->recoverTopics();
+    if (recoveryInfo.empty()) {
+        std::cout << "[net/server] No early partitions recovered. Making dummy partitions...\n";
+        currTopicManager->createTopic("orders", 1);
+        currWorkerPool->registerPartition("orders", 0, currTopicManager->getPartition("orders", 0));
+        currTopicManager->createTopic("payments", 1);
+        currWorkerPool->registerPartition("payments", 0, currTopicManager->getPartition("payments", 0));
+    } else {
+        for (const pubsub::storage::RecoveryInfo &info : recoveryInfo) {
+            currWorkerPool->registerPartition(info.topicName, info.partitionId, info.partition);
+        }
+    }
+
     int serverFD = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
     int opt = 1;
     if (setsockopt(serverFD, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) == -1) {

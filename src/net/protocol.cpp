@@ -2,11 +2,14 @@
 #include <cstring>
 #include <iostream>
 #include <stdexcept>
+#include <type_traits>
+#include <vector>
 
 #include "net/protocol.hpp"
 
 namespace pubsub::net {
 template <typename T> T readFromNetBuffer(const std::vector<uint8_t> &buffer, size_t &offset) {
+    static_assert(std::is_trivially_copyable_v<T>, "T must be trivially copyable");
     if (offset + sizeof(T) > buffer.size()) {
         throw std::out_of_range("[Protocol]: Buffer read overflow");
     }
@@ -15,10 +18,82 @@ template <typename T> T readFromNetBuffer(const std::vector<uint8_t> &buffer, si
     offset += sizeof(T);
     return value;
 }
-template <typename T> void writeToNetBuffer(std::vector<uint8_t> &buffer, const T &value) {
+template <typename T> void writeToNetBufferCopyable(std::vector<uint8_t> &buffer, const T &value) {
+    static_assert(std::is_trivially_copyable_v<T>, "T must be trivially copyable");
     const uint8_t *ptr = reinterpret_cast<const uint8_t *>(&value);
     buffer.insert(buffer.end(), ptr, ptr + sizeof(T));
 }
+
+void writeToNetBufferString(std::vector<uint8_t> &buffer, const std::string &s) {
+    uint16_t len = static_cast<uint16_t>(s.size());
+    writeToNetBufferCopyable(buffer, len);
+    buffer.insert(buffer.end(), s.begin(), s.end());
+}
+void writeToNetBufferBytes(std::vector<uint8_t> &buffer, const std::vector<uint8_t> &bytes) {
+    buffer.insert(buffer.end(), bytes.begin(), bytes.end());
+}
+
+std::vector<uint8_t> serializeRequestHeader(const RequestHeader &reqHeader) {
+    std::vector<uint8_t> serializedBuffer;
+    writeToNetBufferCopyable(serializedBuffer, reqHeader.frameLen);
+    writeToNetBufferCopyable(serializedBuffer, static_cast<uint8_t>(reqHeader.requestType));
+    writeToNetBufferCopyable(serializedBuffer, reqHeader.correlationId);
+    writeToNetBufferString(serializedBuffer, reqHeader.clientId);
+    return serializedBuffer;
+}
+std::vector<uint8_t> serializeProducePayload(const ProducePayload &payload) {
+    std::vector<uint8_t> serializedBuffer;
+    writeToNetBufferString(serializedBuffer, payload.topic);
+    writeToNetBufferCopyable(serializedBuffer, payload.partitionID);
+    writeToNetBufferCopyable(serializedBuffer, payload.acks);
+    writeToNetBufferBytes(serializedBuffer, payload.rawRecordBatch);
+    return serializedBuffer;
+}
+std::vector<uint8_t> serializeProduceRequest(const RequestHeader &reqHeader, const ProducePayload &payload) {
+    std::vector<uint8_t> headerSerializedBuffer = serializeRequestHeader(reqHeader);
+    std::vector<uint8_t> payloadSerializedBuffer = serializeProducePayload(payload);
+    // now first 4 bytes (uint32_t) of the header should be the total size of the request
+    uint32_t frameLen =
+        static_cast<uint32_t>(headerSerializedBuffer.size() + payloadSerializedBuffer.size() - sizeof(uint32_t));
+    std::memcpy(headerSerializedBuffer.data(), &frameLen, sizeof(frameLen));
+    headerSerializedBuffer.insert(headerSerializedBuffer.end(), payloadSerializedBuffer.begin(),
+                                  payloadSerializedBuffer.end());
+    return headerSerializedBuffer;
+}
+std::vector<uint8_t> serializeFetchPayload(const FetchPayload &payload) {
+    std::vector<uint8_t> serializedBuffer;
+    writeToNetBufferString(serializedBuffer, payload.topic);
+    writeToNetBufferCopyable<uint32_t>(serializedBuffer, payload.partitionID);
+    writeToNetBufferCopyable<uint64_t>(serializedBuffer, payload.fetchOffset);
+    writeToNetBufferCopyable<uint32_t>(serializedBuffer, payload.maxBytes);
+    return serializedBuffer;
+}
+std::vector<uint8_t> serializeFetchRequest(const RequestHeader &reqHeader, const FetchPayload &payload) {
+    std::vector<uint8_t> headerSerializedBuffer = serializeRequestHeader(reqHeader);
+    std::vector<uint8_t> payloadSerializedBuffer = serializeFetchPayload(payload);
+    uint32_t frameLen =
+        static_cast<uint32_t>(headerSerializedBuffer.size() + payloadSerializedBuffer.size() - sizeof(uint32_t));
+    std::memcpy(headerSerializedBuffer.data(), &frameLen, sizeof(frameLen));
+    headerSerializedBuffer.insert(headerSerializedBuffer.end(), payloadSerializedBuffer.begin(),
+                                  payloadSerializedBuffer.end());
+    return headerSerializedBuffer;
+}
+
+std::vector<uint8_t> serializeResponse(uint32_t correlationId, ErrorCode errorCode,
+                                       const std::vector<uint8_t> &payload) {
+    std::vector<uint8_t> responseBuffer;
+    writeToNetBufferCopyable<uint32_t>(responseBuffer, 0);
+    writeToNetBufferCopyable<uint8_t>(responseBuffer, static_cast<uint8_t>(errorCode));
+    writeToNetBufferCopyable<uint32_t>(responseBuffer, correlationId);
+    // Sending the response payload immediately after the header
+    if (!payload.empty()) {
+        responseBuffer.insert(responseBuffer.end(), payload.begin(), payload.end());
+    }
+    uint32_t totalFrameLength = static_cast<uint32_t>(responseBuffer.size() - sizeof(uint32_t));
+    std::memcpy(responseBuffer.data(), &totalFrameLength, sizeof(uint32_t));
+    return responseBuffer;
+}
+
 // this func will get a stream buffer from net buffer and deserialize it into a RequestHeader
 RequestHeader deserializeRequestHeader(const std::vector<uint8_t> &buffer, size_t &offset) {
     RequestHeader header;
@@ -27,6 +102,7 @@ RequestHeader deserializeRequestHeader(const std::vector<uint8_t> &buffer, size_
 
     std::cerr << "[net/protocol] deserializeRequestHeader: frameLen=" << buffer.size() << " offset=" << offset
               << std::endl;
+    header.frameLen = static_cast<uint32_t>(buffer.size() - 4);
     header.requestType = static_cast<RequestType>(readFromNetBuffer<uint8_t>(buffer, offset));
     std::cerr << "[net/protocol] deserializeRequestHeader: requestType=" << static_cast<int>(header.requestType)
               << " offset=" << offset << std::endl;
@@ -73,20 +149,6 @@ FetchPayload deserializeFetchPayload(const std::vector<uint8_t> &buffer, size_t 
     payload.fetchOffset = readFromNetBuffer<uint64_t>(buffer, offset);
     payload.maxBytes = readFromNetBuffer<uint32_t>(buffer, offset);
     return payload;
-}
-std::vector<uint8_t> serializeResponse(uint32_t correlationId, ErrorCode errorCode,
-                                       const std::vector<uint8_t> &payload) {
-    std::vector<uint8_t> responseBuffer;
-    writeToNetBuffer<uint32_t>(responseBuffer, 0);
-    writeToNetBuffer<uint32_t>(responseBuffer, correlationId);
-    writeToNetBuffer<uint8_t>(responseBuffer, static_cast<uint8_t>(errorCode));
-    // Sending the response payload immediately after the header
-    if (!payload.empty()) {
-        responseBuffer.insert(responseBuffer.end(), payload.begin(), payload.end());
-    }
-    uint32_t totalFrameLength = static_cast<uint32_t>(responseBuffer.size() - sizeof(uint32_t));
-    std::memcpy(responseBuffer.data(), &totalFrameLength, sizeof(uint32_t));
-    return responseBuffer;
 }
 
 } // namespace pubsub::net

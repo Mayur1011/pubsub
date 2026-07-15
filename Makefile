@@ -1,7 +1,8 @@
 CXX := g++
 FLAGS := -std=c++20 -Iinclude -Wall -Wextra
 
-SRC := $(shell find src -name '*.cpp')
+server:
+	$(CXX) $(FLAGS) src/server.cpp -o server
 
 # Usage:
 # make run TEST=test/storage_testing.cpp

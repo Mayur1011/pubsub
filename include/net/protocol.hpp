@@ -27,7 +27,7 @@ struct RequestHeader {
 };
 
 struct ResponseHeader {
-    uint32_t frameLen; // total bytes excluding this field
+    uint32_t frameLen; // total bytes excluding this field (header + payload)
     ErrorCode errorCode;
     uint32_t correlationId; // correlation id for the request
 };
@@ -44,9 +44,19 @@ struct FetchPayload {
     uint64_t fetchOffset;
     uint32_t maxBytes;
 };
+
+// Serialization
+std::vector<uint8_t> serializeRequestHeader(const RequestHeader &reqHeader);
+std::vector<uint8_t> serializeProducePayload(const ProducePayload &payload);
+std::vector<uint8_t> serializeProduceRequest(const RequestHeader &reqHeader, const ProducePayload &payload);
+std::vector<uint8_t> serializeFetchPayload(const FetchPayload &payload);
+std::vector<uint8_t> serializeFetchRequest(const RequestHeader &reqHeader, const FetchPayload &payload);
+std::vector<uint8_t> serializeResponse(uint32_t correlationId, ErrorCode errorCode,
+                                       const std::vector<uint8_t> &payload);
+
+// Deserialization
 RequestHeader deserializeRequestHeader(const std::vector<uint8_t> &buffer, size_t &offset);
 ProducePayload deserializeProducePayload(const std::vector<uint8_t> &buffer, size_t &offset);
 FetchPayload deserializeFetchPayload(const std::vector<uint8_t> &buffer, size_t &offset);
-std::vector<uint8_t> serializeResponse(uint32_t correlationId, ErrorCode errorCode,
-                                       const std::vector<uint8_t> &payload);
+
 } // namespace pubsub::net

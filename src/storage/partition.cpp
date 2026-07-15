@@ -88,17 +88,21 @@ void Partition::createNewSegment(uint64_t newBaseOffset) {
     segments.push_back(std::move(new_seg));
 }
 
+void Partition::checkNewSegment(uint64_t recordBatchSize) {
+    if (currentSegment == nullptr || currentSegment->getLogFileSize() + recordBatchSize > SEGMENT_SIZE_LIMIT) {
+        createNewSegment(nextRecordOffset);
+    }
+}
+
 void Partition::append(const RecordBatch &recordBatch) {
     // std::cout << "[Partition]: Appending batch of " << recordBatch.numRecords << " records starting at offset " <<
     // nextRecordOffset << "\n";
-    //
     RecordBatch recordBatchCopy = recordBatch;
+    std::vector<uint8_t> serializedRecordBatch = serializeRecordBatch(recordBatchCopy);
+    checkNewSegment(serializedRecordBatch.size());
     recordBatchCopy.baseOffset = nextRecordOffset;
     nextRecordOffset += recordBatchCopy.numRecords;
     currentSegment->appendToLog(recordBatchCopy);
-    if (currentSegment->getLogFileSize() >= SEGMENT_SIZE_LIMIT) {
-        createNewSegment(nextRecordOffset);
-    }
 }
 // This function well read a single record at the given offset
 bool Partition::read(uint64_t offset, Record &record) {

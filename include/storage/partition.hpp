@@ -3,6 +3,7 @@
 
 #include "storage/logSegment.hpp"
 #include "storage/record.hpp"
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <vector>
@@ -16,9 +17,10 @@ class Partition {
     std::filesystem::path segmentDir; // directory where the segment files are stored
     void recoverAndInitLogSegments();
     void createNewSegment(uint64_t newSegmentOffset);
+    void checkNewSegment(uint64_t recordBatchSize);
 
   public:
-    static const uint64_t SEGMENT_SIZE_LIMIT = 100 * 1024 * 1024;
+    static const uint64_t SEGMENT_SIZE_LIMIT = 100;
     Partition(const std::string &baseDir);
     ~Partition() = default;
     void append(const RecordBatch &recordBatch);

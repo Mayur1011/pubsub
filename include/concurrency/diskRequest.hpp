@@ -12,6 +12,7 @@ enum class TaskType { PRODUCE, FETCH };
 struct DiskRequest {
     TaskType type;
     int clientFD;
+    std::string topicName;
     uint32_t partitionID;
     uint32_t correlationID;
 
@@ -19,5 +20,6 @@ struct DiskRequest {
     uint64_t fetchOffset;
 
     std::function<void(std::vector<uint8_t>)> sendResponse;
+    std::string getRoutingKey() const { return topicName + "-" + std::to_string(partitionID); }
 };
 } // namespace pubsub::concurrency

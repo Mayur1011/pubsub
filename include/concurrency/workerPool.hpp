@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <iostream>
+#include <string>
 #include <sys/socket.h>
 #include <thread>
 #include <unordered_map>
@@ -17,10 +19,14 @@ namespace pubsub::concurrency {
 class WorkerThread {
     std::jthread thread;
     DiskQueue<DiskRequest> workerQueue; // this is where the epoll thread pushes requests to be processed by this worker
-    std::unordered_map<uint32_t, pubsub::storage::Partition *>
+    std::unordered_map<std::string, pubsub::storage::Partition *>
         assignedPartitions; // one thread handling one/more partitions
+
     void dispatchRequest(const DiskRequest &request) {
-        auto it = assignedPartitions.find(request.partitionID);
+        // std::cerr << "[Worker] Dispatching request " << static_cast<int>(request.type) << " " <<
+        // request.getRoutingKey()
+        // << " corrId=" << request.correlationID << "\n";
+        auto it = assignedPartitions.find(request.getRoutingKey());
         if (it == assignedPartitions.end()) {
             request.sendResponse(pubsub::net::serializeResponse(
                 request.correlationID, net::ErrorCode::PARTITION_NOT_FOUND, std::vector<uint8_t>()));
@@ -34,8 +40,8 @@ class WorkerThread {
                     pubsub::net::serializeResponse(request.correlationID, net::ErrorCode::NONE, std::vector<uint8_t>());
                 request.sendResponse(serializedResponse);
             } catch (const std::exception &e) {
-                std::cerr << "[concurrency/workerPool]: Failed to append to partition " << request.partitionID << ": "
-                          << e.what() << "\n";
+                std::cerr << "[concurrency/workerPool]: Failed to append to partition " << request.getRoutingKey()
+                          << ": " << e.what() << "\n";
                 request.sendResponse(pubsub::net::serializeResponse(
                     request.correlationID, net::ErrorCode::UNKNOWN_SERVER_ERROR, std::vector<uint8_t>()));
             }
@@ -50,8 +56,8 @@ class WorkerThread {
                         request.correlationID, net::ErrorCode::UNKNOWN_SERVER_ERROR, std::vector<uint8_t>()));
                 }
             } catch (const std::exception &e) {
-                std::cerr << "[concurrency/workerPool]: Failed to fetch from partition " << request.partitionID << ": "
-                          << e.what() << "\n";
+                std::cerr << "[concurrency/workerPool]: Failed to fetch from partition " << request.getRoutingKey()
+                          << ": " << e.what() << "\n";
                 request.sendResponse(pubsub::net::serializeResponse(
                     request.correlationID, net::ErrorCode::UNKNOWN_SERVER_ERROR, std::vector<uint8_t>()));
             }
@@ -60,8 +66,8 @@ class WorkerThread {
 
   public:
     WorkerThread() = default;
-    void assignPartition(uint32_t partitionID, pubsub::storage::Partition *partition) {
-        assignedPartitions[partitionID] = partition;
+    void assignPartition(pubsub::storage::Partition *partition, const std::string &routingKey) {
+        assignedPartitions[routingKey] = partition;
     }
     void start() {
         thread = std::jthread([this](std::stop_token st) {
@@ -83,8 +89,8 @@ class WorkerPool {
     std::vector<std::unique_ptr<WorkerThread>> workers;
 
   public:
-    explicit WorkerPool(size_t num_workers) {
-        for (size_t i = 0; i < num_workers; ++i) {
+    explicit WorkerPool(size_t numWorkers) {
+        for (size_t i = 0; i < numWorkers; ++i) {
             auto worker = std::make_unique<WorkerThread>();
             workers.push_back(std::move(worker));
         }
@@ -96,18 +102,21 @@ class WorkerPool {
         }
     }
 
-    void registerPartition(uint32_t partition_id, void *partition_ptr) {
-        uint32_t worker_id = partition_id % workers.size();
-        workers[worker_id]->assignPartition(partition_id, static_cast<pubsub::storage::Partition *>(partition_ptr));
-        std::cout << "[concurreny/WorkerPool] Assigned Partition " << partition_id << " to Worker Thread " << worker_id
-                  << "\n";
+    void registerPartition(const std::string &topicName, uint32_t partitionID, void *partitionPtr) {
+        uint32_t workerID = (std::hash<std::string>{}(topicName) + partitionID) % workers.size();
+        std::string routingKey = topicName + "-" + std::to_string(partitionID);
+        workers[workerID]->assignPartition((storage::Partition *)partitionPtr, routingKey);
+        std::cout << "[concurreny/WorkerPool] Assigned Partition " << partitionID << " to Worker Thread " << workerID
+                  << " (routing key: " << routingKey << ")\n";
     }
 
     // epoll thread will call this to drop requests onto the correct worker
-    void routeRequest(DiskRequest req) {
-        uint32_t worker_id = req.partitionID % workers.size();
-        std::cerr << "[concurreny/WorkerPool] routing request to worker " << worker_id << "\n";
-        workers[worker_id]->submitRequest(std::move(req));
+    void routeRequest(DiskRequest diskRequest) {
+        uint32_t workerID =
+            (std::hash<std::string>{}(diskRequest.topicName) + diskRequest.partitionID) % workers.size();
+        std::cerr << "[concurreny/WorkerPool] routing request to worker " << workerID
+                  << " (routing key: " << diskRequest.getRoutingKey() << ")\n";
+        workers[workerID]->submitRequest(std::move(diskRequest));
     }
 
     void shutDown() {

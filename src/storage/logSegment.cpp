@@ -41,6 +41,7 @@ std::string LogSegment::getFileName(uint64_t offset, const std::string &fileExte
     return ss.str();
 }
 
+// here i dont need to check for segment size because the partition code will handle it.
 void LogSegment::appendToLog(RecordBatch &recordBatch) {
     std::vector<uint8_t> serializedBatch = serializeRecordBatch(recordBatch);
     // why not &serializedBatch as second arg: &serializedBatch` is a pointer to the std::vector object, not to its byte
