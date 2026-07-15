@@ -1,4 +1,3 @@
-#include <asm-generic/socket.h>
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
@@ -63,7 +62,6 @@ void sendResponse(ClientState *conn, int epollFD) {
     epollEvent.events = EPOLLIN | EPOLLET;
     epoll_ctl(epollFD, EPOLL_CTL_MOD, conn->fd, &epollEvent);
 }
-
 void process_frame(ClientState *conn, std::vector<uint8_t> &frame_vec, int epollFD) {
     size_t offset = 4; // first 4 bytes are FrameLength
     try {
@@ -112,7 +110,6 @@ void process_frame(ClientState *conn, std::vector<uint8_t> &frame_vec, int epoll
         std::cerr << "[net/server] Protocol error: " << e.what() << "\n";
     }
 }
-
 void handleEpollReads(ClientState *conn, int epollFD) {
     uint8_t read_buf[4096];
     while (true) {
@@ -151,7 +148,6 @@ void handleEpollReads(ClientState *conn, int epollFD) {
         }
     }
 }
-
 int main() {
     try {
         std::cout << "[net/server]: Initialzing topic manager...\n";
@@ -163,7 +159,6 @@ int main() {
     }
     currWorkerPool = std::make_unique<pubsub::concurrency::WorkerPool>(5);
     currWorkerPool->start();
-
     std::cout << "[net/server]: Worker pool initialized.\n";
     std::cout << "[net/server]: Registering partitions...\n";
     std::cout << "[net/server]: Recovering partitions...\n";
