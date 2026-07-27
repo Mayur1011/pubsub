@@ -82,15 +82,15 @@ IndexEntry LogSegment::getLastIndexEntry() {
 }
 
 /*
- * Read the record at given offset from the log file
+ * Read the recordbatch at given offset from the log file
  */
-bool LogSegment::readFromLog(uint64_t offset, Record &outRecord) {
+bool LogSegment::readFromLog(uint64_t offset, RecordBatch &outBatch) {
     indexFileSize = idxFile.getIdxFileSize();
     std::cerr << "[logsegment]: readFromLog offset= " << offset << " logFileSize= " << logFileSize
               << " indexFileSize= " << indexFileSize << std::endl;
     if (indexFileSize == 0)
         return false;
-    int64_t currPtr = idxFile.lookup(offset); // currPtr is the byte position in the log file
+    int64_t currPtr = idxFile.lookup(offset); // currPtr is the byte position of closet batch <= offset in the log file
     if (currPtr == -1)
         return false;
     // std::cerr << "[logsegment]: currPtr= " << currPtr << " logFileSize= " << logFileSize << std::endl;
@@ -105,13 +105,17 @@ bool LogSegment::readFromLog(uint64_t offset, Record &outRecord) {
         if (pread(logFD, batchBuffer.data(), totalBatchSize, currPtr) != (ssize_t)totalBatchSize)
             return false;
         RecordBatch batch = deserializeRecordBatch(batchBuffer);
+        // if (offset >= batch.baseOffset and offset < (batch.baseOffset + batch.numRecords)) {
+        //     for (Record record : batch.records) {
+        //         if (batch.baseOffset + record.recordOffsetDelta == offset) {
+        //             outRecord = record;
+        //             return true;
+        //         }
+        //     }
+        // }
         if (offset >= batch.baseOffset and offset < (batch.baseOffset + batch.numRecords)) {
-            for (Record record : batch.records) {
-                if (batch.baseOffset + record.recordOffsetDelta == offset) {
-                    outRecord = record;
-                    return true;
-                }
-            }
+            outBatch = std::move(batch);
+            return true;
         }
         currPtr += totalBatchSize;
     }

@@ -65,7 +65,6 @@ std::vector<uint8_t> serializeFetchPayload(const FetchPayload &payload) {
     writeToNetBufferString(serializedBuffer, payload.topic);
     writeToNetBufferCopyable<uint32_t>(serializedBuffer, payload.partitionID);
     writeToNetBufferCopyable<uint64_t>(serializedBuffer, payload.fetchOffset);
-    writeToNetBufferCopyable<uint32_t>(serializedBuffer, payload.maxBytes);
     return serializedBuffer;
 }
 std::vector<uint8_t> serializeFetchRequest(const RequestHeader &reqHeader, const FetchPayload &payload) {
@@ -91,6 +90,12 @@ std::vector<uint8_t> serializeResponse(uint32_t correlationId, ErrorCode errorCo
     }
     uint32_t totalFrameLength = static_cast<uint32_t>(responseBuffer.size() - sizeof(uint32_t));
     std::memcpy(responseBuffer.data(), &totalFrameLength, sizeof(uint32_t));
+    return responseBuffer;
+}
+std::vector<uint8_t> serializeFetchResponse(uint64_t lastOffset, const std::vector<uint8_t> &payload) {
+    std::vector<uint8_t> responseBuffer;
+    writeToNetBufferCopyable<uint64_t>(responseBuffer, lastOffset);
+    writeToNetBufferBytes(responseBuffer, payload);
     return responseBuffer;
 }
 
@@ -147,7 +152,6 @@ FetchPayload deserializeFetchPayload(const std::vector<uint8_t> &buffer, size_t 
     offset += topicLen;
     payload.partitionID = readFromNetBuffer<uint32_t>(buffer, offset);
     payload.fetchOffset = readFromNetBuffer<uint64_t>(buffer, offset);
-    payload.maxBytes = readFromNetBuffer<uint32_t>(buffer, offset);
     return payload;
 }
 

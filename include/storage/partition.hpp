@@ -24,6 +24,7 @@ class Partition {
     Partition(const std::string &baseDir);
     ~Partition() = default;
     void append(const RecordBatch &recordBatch);
-    bool read(uint64_t offset, Record &record);
+    bool read(uint64_t offset, RecordBatch &recordBatch);
+    uint64_t getNextOffset() const; // this function returns the offset for the next record to be created
 };
 } // namespace pubsub::storage

@@ -120,7 +120,7 @@ std::vector<uint8_t> build_fetch_request(uint32_t corrIDelationId, const std::st
     append_string_u16(frame, topic);
     append_bytes<uint32_t>(frame, partitionId);
     append_bytes<uint64_t>(frame, fetchOffset);
-    append_bytes<uint32_t>(frame, maxBytes);
+    // append_bytes<uint32_t>(frame, maxBytes);
 
     uint32_t frameLen = static_cast<uint32_t>(frame.size() - 4);
     std::memcpy(frame.data(), &frameLen, sizeof(frameLen));

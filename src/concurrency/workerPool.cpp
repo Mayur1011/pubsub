@@ -1,4 +1,9 @@
 #include "concurrency/workerPool.hpp"
+#include "net/protocol.hpp"
+#include "storage/record.hpp"
+#include "storage/topicManager.hpp"
+#include <cstdint>
+#include <cstring>
 
 namespace pubsub::concurrency {
 void WorkerThread::assignPartition(pubsub::storage::Partition *partition, const std::string &routingKey) {
@@ -30,10 +35,12 @@ void WorkerThread::dispatchRequest(const DiskRequest &request) {
             }
         } else if (request.type == TaskType::FETCH) {
             try {
-                storage::Record record;
-                if (partition->read(request.fetchOffset, record)) {
-                    request.sendResponse(pubsub::net::serializeResponse(request.correlationID, net::ErrorCode::NONE,
-                                                                        storage::serializeRecord(record)));
+                uint64_t tmpLastOffset = partition->getNextOffset();
+                storage::RecordBatch recordBatch;
+                if (partition->read(request.fetchOffset, recordBatch) and recordBatch.numRecords != 0) {
+                    request.sendResponse(pubsub::net::serializeResponse(
+                        request.correlationID, net::ErrorCode::NONE,
+                        net::serializeFetchResponse(tmpLastOffset, storage::serializeRecordBatch(recordBatch))));
                 } else {
                     request.sendResponse(pubsub::net::serializeResponse(
                         request.correlationID, net::ErrorCode::UNKNOWN_SERVER_ERROR, std::vector<uint8_t>()));
@@ -41,6 +48,47 @@ void WorkerThread::dispatchRequest(const DiskRequest &request) {
             } catch (const std::exception &e) {
                 std::cerr << "[concurrency/workerPool]: Failed to fetch from partition " << request.getRoutingKey()
                           << ": " << e.what() << "\n";
+                request.sendResponse(pubsub::net::serializeResponse(
+                    request.correlationID, net::ErrorCode::UNKNOWN_SERVER_ERROR, std::vector<uint8_t>()));
+            }
+        } else if (request.type == TaskType::COMMIT_LOG_OFFSET) {
+            try {
+                std::string offsetKey = net::make_offset_key(request.groupID, request.topicName, request.partitionID);
+                uint32_t internalPartitionID = pubsub::net::fnv1aHash(offsetKey) % 50;
+                pubsub::storage::Record offsetRecord;
+                offsetRecord.key = offsetKey;
+                offsetRecord.value.resize(sizeof(uint64_t));
+                std::memcpy(offsetRecord.value.data(), &request.committedLogOffset, sizeof(uint64_t));
+                pubsub::storage::RecordBatch internalBatch;
+                internalBatch.records.push_back(std::move(offsetRecord));
+                internalBatch.numRecords = 1;
+                pubsub::storage::Partition *internalPart =
+                    topicManager->getPartition("consumer_offsets", internalPartitionID);
+                if (!internalPart) {
+                    request.sendResponse(pubsub::net::serializeResponse(
+                        request.correlationID, pubsub::net::ErrorCode::UNKNOWN_SERVER_ERROR, {}));
+                    return;
+                }
+                internalPart->append(internalBatch);
+                topicManager->updateCommitLogOffset(offsetKey, request.committedLogOffset);
+                request.sendResponse(
+                    pubsub::net::serializeResponse(request.correlationID, pubsub::net::ErrorCode::NONE, {}));
+            } catch (const std::exception &e) {
+                std::cerr << "[concurrency/workerPool]: Failed to commit log offset: " << e.what() << "\n";
+                request.sendResponse(pubsub::net::serializeResponse(
+                    request.correlationID, net::ErrorCode::UNKNOWN_SERVER_ERROR, std::vector<uint8_t>()));
+            }
+        } else if (request.type == TaskType::FETCH_LOG_OFFSET) {
+            try {
+                std::string offsetKey = net::make_offset_key(request.groupID, request.topicName, request.partitionID);
+                uint64_t commitedLogOffset = topicManager->getCommitLogOffset(offsetKey);
+                std::vector<uint8_t> response_payload(sizeof(int64_t));
+                std::memcpy(response_payload.data(), &commitedLogOffset, sizeof(int64_t));
+                request.sendResponse(pubsub::net::serializeResponse(request.correlationID, pubsub::net::ErrorCode::NONE,
+                                                                    response_payload));
+
+            } catch (const std::exception &e) {
+                std::cerr << "[concurrency/workerPool]: Failed to fetch log offset: " << e.what() << "\n";
                 request.sendResponse(pubsub::net::serializeResponse(
                     request.correlationID, net::ErrorCode::UNKNOWN_SERVER_ERROR, std::vector<uint8_t>()));
             }

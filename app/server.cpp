@@ -79,6 +79,7 @@ void process_frame(ClientState *conn, std::vector<uint8_t> &frame_vec, int epoll
             diskRequest.produceBatch = pubsub::storage::deserializeRecordBatch(reqPayload.rawRecordBatch);
         } else if (header.requestType == RequestType::FETCH) {
             FetchPayload reqPayload = deserializeFetchPayload(frame_vec, offset);
+            std::cout << "[net/server] FETCH from " << header.clientId << " on " << reqPayload.topic << "\n";
             diskRequest.type = pubsub::concurrency::TaskType::FETCH;
             diskRequest.topicName = reqPayload.topic;
             diskRequest.partitionID = reqPayload.partitionID;
@@ -157,7 +158,7 @@ int main() {
         std::cerr << "[net/server]: Failed to initialize topic manager: " << e.what() << '\n';
         return 1;
     }
-    currWorkerPool = std::make_unique<pubsub::concurrency::WorkerPool>(5);
+    currWorkerPool = std::make_unique<pubsub::concurrency::WorkerPool>(5, currTopicManager.get());
     currWorkerPool->start();
     std::cout << "[net/server]: Worker pool initialized.\n";
     std::cout << "[net/server]: Registering partitions...\n";

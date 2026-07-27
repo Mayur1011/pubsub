@@ -26,7 +26,7 @@ class LogSegment {
     LogSegment(uint64_t _firstRecordOffset, uint32_t _flushInterval, const std::string &_segmentDir);
     ~LogSegment();
     void appendToLog(RecordBatch &recordBatch);
-    bool readFromLog(uint64_t recordOffset, Record &record);
+    bool readFromLog(uint64_t recordOffset, RecordBatch &recordBatch);
     uint64_t size();
     uint64_t getFirstRecordOffset();
     uint64_t getLogFileSize();

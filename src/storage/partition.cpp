@@ -94,6 +94,8 @@ void Partition::checkNewSegment(uint64_t recordBatchSize) {
     }
 }
 
+uint64_t Partition::getNextOffset() const { return nextRecordOffset; }
+
 void Partition::append(const RecordBatch &recordBatch) {
     // std::cout << "[Partition]: Appending batch of " << recordBatch.numRecords << " records starting at offset " <<
     // nextRecordOffset << "\n";
@@ -104,8 +106,8 @@ void Partition::append(const RecordBatch &recordBatch) {
     nextRecordOffset += recordBatchCopy.numRecords;
     currentSegment->appendToLog(recordBatchCopy);
 }
-// This function well read a single record at the given offset
-bool Partition::read(uint64_t offset, Record &record) {
+// This function well read a single recordbatch at the given offset
+bool Partition::read(uint64_t offset, RecordBatch &recordBatch) {
     if (segments.empty() || offset >= nextRecordOffset) {
         return false;
     }
@@ -117,6 +119,6 @@ bool Partition::read(uint64_t offset, Record &record) {
     }
     --it;
     // std::cout << "[partition]: Reading from segment starting at offset " << (*it)->getFirstRecordOffset() << "\n";
-    return (*it)->readFromLog(offset, record);
+    return (*it)->readFromLog(offset, recordBatch);
 }
 } // namespace pubsub::storage
