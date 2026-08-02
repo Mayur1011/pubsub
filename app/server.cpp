@@ -84,6 +84,23 @@ void process_frame(ClientState *conn, std::vector<uint8_t> &frame_vec, int epoll
             diskRequest.topicName = reqPayload.topic;
             diskRequest.partitionID = reqPayload.partitionID;
             diskRequest.fetchOffset = reqPayload.fetchOffset;
+        } else if (header.requestType == RequestType::COMMIT_LOG_OFFSET) {
+            OffsetCommitPayload reqPayload = deserializeOffsetCommitPayload(frame_vec, offset);
+            std::cout << "[net/server] OFFSET_COMMIT from " << header.clientId << " for group " << reqPayload.groupID
+                      << "\n";
+            diskRequest.type = pubsub::concurrency::TaskType::COMMIT_LOG_OFFSET;
+            diskRequest.groupID = reqPayload.groupID;
+            diskRequest.topicName = reqPayload.topic;
+            diskRequest.partitionID = reqPayload.partitionID;
+            diskRequest.committedLogOffset = reqPayload.committedLogOffset;
+        } else if (header.requestType == RequestType::FETCH_LOG_OFFSET) {
+            OffsetFetchPayload reqPayload = deserializeOffsetFetchPayload(frame_vec, offset);
+            std::cout << "[net/server] OFFSET_FETCH from " << header.clientId << " for group " << reqPayload.groupID
+                      << "\n";
+            diskRequest.type = pubsub::concurrency::TaskType::FETCH_LOG_OFFSET;
+            diskRequest.groupID = reqPayload.groupID;
+            diskRequest.topicName = reqPayload.topic;
+            diskRequest.partitionID = reqPayload.partitionID;
         }
         if (currTopicManager->getPartition(diskRequest.topicName, diskRequest.partitionID) == nullptr) {
             std::cerr << "[net/server] Rejecting request: Topic/Partition target not found: " << diskRequest.topicName

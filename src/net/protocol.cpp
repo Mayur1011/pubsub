@@ -99,6 +99,22 @@ std::vector<uint8_t> serializeFetchResponse(uint64_t lastOffset, const std::vect
     return responseBuffer;
 }
 
+OffsetCommitPayload deserializeOffsetCommitPayload(const std::vector<uint8_t> &buffer, size_t &offset) {
+    OffsetCommitPayload payload;
+    payload.groupID = readFromNetBuffer<std::string>(buffer, offset);
+    payload.topic = readFromNetBuffer<std::string>(buffer, offset);
+    payload.partitionID = readFromNetBuffer<uint32_t>(buffer, offset);
+    payload.committedLogOffset = readFromNetBuffer<uint64_t>(buffer, offset);
+    return payload;
+}
+OffsetFetchPayload deserializeOffsetFetchPayload(const std::vector<uint8_t> &buffer, size_t &offset) {
+    OffsetFetchPayload payload;
+    payload.groupID = readFromNetBuffer<std::string>(buffer, offset);
+    payload.topic = readFromNetBuffer<std::string>(buffer, offset);
+    payload.partitionID = readFromNetBuffer<uint32_t>(buffer, offset);
+    return payload;
+}
+
 // this func will get a stream buffer from net buffer and deserialize it into a RequestHeader
 RequestHeader deserializeRequestHeader(const std::vector<uint8_t> &buffer, size_t &offset) {
     RequestHeader header;

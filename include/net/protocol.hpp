@@ -44,6 +44,17 @@ struct FetchResponse {
     uint64_t lastOffset; // highest offset in log file
     std::vector<uint8_t> rawRecordBatch;
 };
+struct OffsetCommitPayload {
+    std::string groupID;
+    std::string topic;
+    uint32_t partitionID;
+    uint64_t committedLogOffset;
+};
+struct OffsetFetchPayload {
+    std::string groupID;
+    std::string topic;
+    uint32_t partitionID;
+};
 
 // Serialization
 std::vector<uint8_t> serializeRequestHeader(const RequestHeader &reqHeader);
@@ -58,6 +69,8 @@ std::vector<uint8_t> serializeFetchResponse(uint64_t lastOffset, const std::vect
 RequestHeader deserializeRequestHeader(const std::vector<uint8_t> &buffer, size_t &offset);
 ProducePayload deserializeProducePayload(const std::vector<uint8_t> &buffer, size_t &offset);
 FetchPayload deserializeFetchPayload(const std::vector<uint8_t> &buffer, size_t &offset);
+OffsetCommitPayload deserializeOffsetCommitPayload(const std::vector<uint8_t> &buffer, size_t &offset);
+OffsetFetchPayload deserializeOffsetFetchPayload(const std::vector<uint8_t> &buffer, size_t &offset);
 
 // standard FNV-1a hash function
 inline uint32_t fnv1aHash(const std::string &str) {
