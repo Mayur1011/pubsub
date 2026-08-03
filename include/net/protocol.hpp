@@ -12,6 +12,7 @@ enum class RequestType : uint8_t {
     // the cosumer will send a request of this type to the server after 30 seconds, to tell
     // that it is still alive.
     CONSUMER_HEARTBEAT = 0x05,
+    JOIN_GROUP = 0x06,
 };
 enum class ErrorCode : uint8_t {
     NONE = 0x00,
@@ -20,6 +21,7 @@ enum class ErrorCode : uint8_t {
     PARTITION_NOT_FOUND = 0x03,
     INVALID_OFFSET = 0x04,
     CORRUPTED_MESSAGE_BATCH = 0x05,
+    REJOIN = 0x06,
 };
 struct RequestHeader {
     uint32_t frameLen; // total bytes excluding this field
@@ -52,6 +54,7 @@ struct OffsetCommitPayload {
     std::string topic;
     uint32_t partitionID;
     uint64_t committedLogOffset;
+    uint32_t generationID;
 };
 struct OffsetFetchPayload {
     std::string groupID;
@@ -64,6 +67,11 @@ struct HeartBeatPayload {
     uint32_t generationID; // lets say a consumer gets kicked out and then it again reconnects and tries to save the
                            // commit offest, i might change teh newly assigned consumer data. Because the main intial
                            // design was to ensure that a partition is only assigned to one consumer at a time.
+};
+struct JoinGroupPayload {
+    std::string groupID;
+    std::string memberID;
+    uint32_t generationID;
 };
 
 // Serialization
@@ -82,6 +90,7 @@ FetchPayload deserializeFetchPayload(const std::vector<uint8_t> &buffer, size_t 
 OffsetCommitPayload deserializeOffsetCommitPayload(const std::vector<uint8_t> &buffer, size_t &offset);
 OffsetFetchPayload deserializeOffsetFetchPayload(const std::vector<uint8_t> &buffer, size_t &offset);
 HeartBeatPayload deserializeHeartBeatPayload(const std::vector<uint8_t> &buffer, size_t &offset);
+JoinGroupPayload deserializeJoinGroupPayload(const std::vector<uint8_t> &buffer, size_t &offset);
 
 // standard FNV-1a hash function
 inline uint32_t fnv1aHash(const std::string &str) {

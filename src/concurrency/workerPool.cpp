@@ -34,6 +34,11 @@ void WorkerThread::dispatchRequest(const DiskRequest &request) {
                     request.correlationID, net::ErrorCode::UNKNOWN_SERVER_ERROR, std::vector<uint8_t>()));
             }
         } else if (request.type == TaskType::FETCH) {
+            if (not groupCoord->validateGeneration(request.groupID, request.generationID)) {
+                request.sendResponse(pubsub::net::serializeResponse(request.correlationID, net::ErrorCode::REJOIN,
+                                                                    std::vector<uint8_t>()));
+                return;
+            }
             try {
                 uint64_t tmpLastOffset = partition->getNextOffset();
                 storage::RecordBatch recordBatch;
@@ -52,6 +57,11 @@ void WorkerThread::dispatchRequest(const DiskRequest &request) {
                     request.correlationID, net::ErrorCode::UNKNOWN_SERVER_ERROR, std::vector<uint8_t>()));
             }
         } else if (request.type == TaskType::COMMIT_LOG_OFFSET) {
+            if (not groupCoord->validateGeneration(request.groupID, request.generationID)) {
+                request.sendResponse(pubsub::net::serializeResponse(request.correlationID, net::ErrorCode::REJOIN,
+                                                                    std::vector<uint8_t>()));
+                return;
+            }
             try {
                 std::string offsetKey = net::make_offset_key(request.groupID, request.topicName, request.partitionID);
                 uint32_t internalPartitionID = pubsub::net::fnv1aHash(offsetKey) % 50;
@@ -79,10 +89,15 @@ void WorkerThread::dispatchRequest(const DiskRequest &request) {
                     request.correlationID, net::ErrorCode::UNKNOWN_SERVER_ERROR, std::vector<uint8_t>()));
             }
         } else if (request.type == TaskType::FETCH_LOG_OFFSET) {
+            if (not groupCoord->validateGeneration(request.groupID, request.generationID)) {
+                request.sendResponse(pubsub::net::serializeResponse(request.correlationID, net::ErrorCode::REJOIN,
+                                                                    std::vector<uint8_t>()));
+                return;
+            }
             try {
                 std::string offsetKey = net::make_offset_key(request.groupID, request.topicName, request.partitionID);
                 uint64_t commitedLogOffset = topicManager->getCommitLogOffset(offsetKey);
-                std::vector<uint8_t> response_payload(sizeof(int64_t));
+                std::vector<uint8_t> response_payload(sizeof(uint64_t));
                 std::memcpy(response_payload.data(), &commitedLogOffset, sizeof(int64_t));
                 request.sendResponse(pubsub::net::serializeResponse(request.correlationID, pubsub::net::ErrorCode::NONE,
                                                                     response_payload));
@@ -93,9 +108,18 @@ void WorkerThread::dispatchRequest(const DiskRequest &request) {
                     request.correlationID, net::ErrorCode::UNKNOWN_SERVER_ERROR, std::vector<uint8_t>()));
             }
         } else if (request.type == TaskType::CONSUMER_HEARTBEAT) {
+            // checking if the consumer that has send the heartbeat was already kicked or not.
+            if (not groupCoord->validateGeneration(request.groupID, request.generationID)) {
+                // i need to tell the consumer to rejoin and now it can get some difference partition
+                request.sendResponse(net::serializeResponse(request.correlationID, pubsub::net::ErrorCode::REJOIN,
+                                                            std::vector<uint8_t>()));
+                return;
+            }
             groupCoord->registerHeartBeat(request.groupID, request.memberID);
             request.sendResponse(pubsub::net::serializeResponse(request.correlationID, pubsub::net::ErrorCode::NONE,
                                                                 std::vector<uint8_t>()));
+        } else if (request.type == TaskType::JOIN_GROUP) {
+            groupCoord->joinGroup(request.groupID, request.memberID, request.topicName, request.sendResponse);
         }
     }
 }

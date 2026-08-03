@@ -114,6 +114,7 @@ OffsetCommitPayload deserializeOffsetCommitPayload(const std::vector<uint8_t> &b
     payload.topic = readStringFromNetBuffer(buffer, offset);
     payload.partitionID = readFromNetBuffer<uint32_t>(buffer, offset);
     payload.committedLogOffset = readFromNetBuffer<uint64_t>(buffer, offset);
+    payload.generationID = readFromNetBuffer<uint32_t>(buffer, offset);
     return payload;
 }
 OffsetFetchPayload deserializeOffsetFetchPayload(const std::vector<uint8_t> &buffer, size_t &offset) {
@@ -125,6 +126,13 @@ OffsetFetchPayload deserializeOffsetFetchPayload(const std::vector<uint8_t> &buf
 }
 HeartBeatPayload deserializeHeartBeatPayload(const std::vector<uint8_t> &buffer, size_t &offset) {
     HeartBeatPayload payload;
+    payload.groupID = readStringFromNetBuffer(buffer, offset);
+    payload.memberID = readStringFromNetBuffer(buffer, offset);
+    payload.generationID = readFromNetBuffer<uint32_t>(buffer, offset);
+    return payload;
+}
+JoinGroupPayload deserializeJoinGroupPayload(const std::vector<uint8_t> &buffer, size_t &offset) {
+    JoinGroupPayload payload;
     payload.groupID = readStringFromNetBuffer(buffer, offset);
     payload.memberID = readStringFromNetBuffer(buffer, offset);
     payload.generationID = readFromNetBuffer<uint32_t>(buffer, offset);

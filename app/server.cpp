@@ -108,6 +108,12 @@ void process_frame(ClientState *conn, std::vector<uint8_t> &frame_vec, int epoll
             diskRequest.groupID = reqPayload.groupID;
             diskRequest.memberID = reqPayload.memberID;
             diskRequest.generationID = reqPayload.generationID;
+        } else if (header.requestType == RequestType::JOIN_GROUP) {
+            JoinGroupPayload reqPayload = deserializeJoinGroupPayload(frame_vec, offset);
+            diskRequest.type = pubsub::concurrency::TaskType::JOIN_GROUP;
+            diskRequest.groupID = reqPayload.groupID;
+            diskRequest.memberID = reqPayload.memberID;
+            diskRequest.generationID = reqPayload.generationID;
         }
         if (currTopicManager->getPartition(diskRequest.topicName, diskRequest.partitionID) == nullptr) {
             std::cerr << "[net/server] Rejecting request: Topic/Partition target not found: " << diskRequest.topicName
@@ -182,7 +188,7 @@ int main() {
         std::cerr << "[net/server]: Failed to initialize topic manager: " << e.what() << '\n';
         return 1;
     }
-    auto currGroupCoordinator = std::make_unique<pubsub::concurrency::GroupCoord>();
+    auto currGroupCoordinator = std::make_unique<pubsub::concurrency::GroupCoord>(currTopicManager.get());
     currWorkerPool =
         std::make_unique<pubsub::concurrency::WorkerPool>(5, currTopicManager.get(), currGroupCoordinator.get());
     currWorkerPool->start();

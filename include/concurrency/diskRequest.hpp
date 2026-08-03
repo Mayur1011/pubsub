@@ -8,7 +8,7 @@
 namespace pubsub::concurrency {
 // this struct represent how to request related to disk for the worker thread will look like (this is the struct that
 // will be pushed into diskqueue by epoll n/w theread)
-enum class TaskType { PRODUCE, FETCH, COMMIT_LOG_OFFSET, FETCH_LOG_OFFSET, CONSUMER_HEARTBEAT };
+enum class TaskType { PRODUCE, FETCH, COMMIT_LOG_OFFSET, FETCH_LOG_OFFSET, CONSUMER_HEARTBEAT, JOIN_GROUP };
 struct DiskRequest {
     TaskType type;
     int clientFD;
