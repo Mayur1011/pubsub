@@ -63,7 +63,7 @@ class TopicManager {
                 }
             }
         }
-        recoverCommitLogOffset();
+        // recoverCommitLogOffset();
         return recoveryInfo;
     }
     void createTopic(const std::string &topicName, uint32_t numPartitions) {
@@ -92,6 +92,13 @@ class TopicManager {
             return nullptr;
         return partitionPtr->second.get();
     }
+    uint32_t getPartitionCount(const std::string &topicName) {
+        std::shared_lock<std::shared_mutex> lock(topicManagerMU);
+        auto topicPtr = topicPartitionMap.find(topicName);
+        if (topicPtr == topicPartitionMap.end())
+            return 0;
+        return topicPtr->second.size();
+    }
 
     // helper for log map
     void createPartitionCommitLog(const std::string &topicName, uint32_t paritionID) {
@@ -102,7 +109,8 @@ class TopicManager {
                 return;
             }
         }
-        std::filesystem::path partitionDir = baseDir / topicName / ("partition_" + std::to_string(paritionID));
+        std::filesystem::path partitionDir =
+            baseDir / "topics" / topicName / ("partition_" + std::to_string(paritionID));
         std::filesystem::create_directories(partitionDir);
         topicPartitionMap[topicName][paritionID] = std::make_unique<Partition>(partitionDir.string());
         std::cout << "[storage/topicManager] Initialized partition: " << topicName << ":" << paritionID << "\n";
@@ -128,7 +136,7 @@ class TopicManager {
         std::cout << "[storage/topicManager] Rebuilding consumer_offsets log to build memory cache...\n";
 
         for (int i = 0; i < 50; ++i) {
-            pubsub::storage::Partition *partition = topicPartitionMap["__consumer_offsets"][i].get();
+            pubsub::storage::Partition *partition = topicPartitionMap["consumer_offsets"][i].get();
             uint64_t scanOffset = 0;
             pubsub::storage::RecordBatch recordBatch;
             // Loop and read sequentially through the internal partition until we run out of batches

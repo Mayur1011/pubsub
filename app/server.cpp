@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "concurrency/diskRequest.hpp"
+#include "concurrency/groupCoord.hpp"
 #include "concurrency/workerPool.hpp"
 #include "net/connBuff.hpp"
 #include "net/protocol.hpp"
@@ -101,6 +102,12 @@ void process_frame(ClientState *conn, std::vector<uint8_t> &frame_vec, int epoll
             diskRequest.groupID = reqPayload.groupID;
             diskRequest.topicName = reqPayload.topic;
             diskRequest.partitionID = reqPayload.partitionID;
+        } else if (header.requestType == RequestType::CONSUMER_HEARTBEAT) {
+            HeartBeatPayload reqPayload = deserializeHeartBeatPayload(frame_vec, offset);
+            diskRequest.type = pubsub::concurrency::TaskType::CONSUMER_HEARTBEAT;
+            diskRequest.groupID = reqPayload.groupID;
+            diskRequest.memberID = reqPayload.memberID;
+            diskRequest.generationID = reqPayload.generationID;
         }
         if (currTopicManager->getPartition(diskRequest.topicName, diskRequest.partitionID) == nullptr) {
             std::cerr << "[net/server] Rejecting request: Topic/Partition target not found: " << diskRequest.topicName
@@ -175,12 +182,15 @@ int main() {
         std::cerr << "[net/server]: Failed to initialize topic manager: " << e.what() << '\n';
         return 1;
     }
-    currWorkerPool = std::make_unique<pubsub::concurrency::WorkerPool>(5, currTopicManager.get());
+    auto currGroupCoordinator = std::make_unique<pubsub::concurrency::GroupCoord>();
+    currWorkerPool =
+        std::make_unique<pubsub::concurrency::WorkerPool>(5, currTopicManager.get(), currGroupCoordinator.get());
     currWorkerPool->start();
     std::cout << "[net/server]: Worker pool initialized.\n";
-    std::cout << "[net/server]: Registering partitions...\n";
     std::cout << "[net/server]: Recovering partitions...\n";
     std::vector<pubsub::storage::RecoveryInfo> recoveryInfo = currTopicManager->recoverTopics();
+    currTopicManager->initializeOffsetPartition();
+    currTopicManager->recoverCommitLogOffset();
     if (recoveryInfo.empty()) {
         std::cout << "[net/server] No early partitions recovered. Making dummy partitions...\n";
         currTopicManager->createTopic("orders", 1);
@@ -191,6 +201,10 @@ int main() {
         for (const pubsub::storage::RecoveryInfo &info : recoveryInfo) {
             currWorkerPool->registerPartition(info.topicName, info.partitionId, info.partition);
         }
+    }
+    std::cout << "[net/server]: Registering offset partitions to workerpool.\n";
+    for (uint32_t i = 0; i < 50; i++) {
+        currWorkerPool->registerPartition("consumer_offsets", i, currTopicManager->getPartition("consumer_offsets", i));
     }
 
     int serverFD = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);

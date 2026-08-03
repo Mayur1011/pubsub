@@ -92,6 +92,10 @@ void WorkerThread::dispatchRequest(const DiskRequest &request) {
                 request.sendResponse(pubsub::net::serializeResponse(
                     request.correlationID, net::ErrorCode::UNKNOWN_SERVER_ERROR, std::vector<uint8_t>()));
             }
+        } else if (request.type == TaskType::CONSUMER_HEARTBEAT) {
+            groupCoord->registerHeartBeat(request.groupID, request.memberID);
+            request.sendResponse(pubsub::net::serializeResponse(request.correlationID, pubsub::net::ErrorCode::NONE,
+                                                                std::vector<uint8_t>()));
         }
     }
 }

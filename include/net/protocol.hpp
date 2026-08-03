@@ -9,6 +9,9 @@ enum class RequestType : uint8_t {
     FETCH = 0x02,
     COMMIT_LOG_OFFSET = 0x03,
     FETCH_LOG_OFFSET = 0x04,
+    // the cosumer will send a request of this type to the server after 30 seconds, to tell
+    // that it is still alive.
+    CONSUMER_HEARTBEAT = 0x05,
 };
 enum class ErrorCode : uint8_t {
     NONE = 0x00,
@@ -55,6 +58,13 @@ struct OffsetFetchPayload {
     std::string topic;
     uint32_t partitionID;
 };
+struct HeartBeatPayload {
+    std::string groupID;
+    std::string memberID;  // cosumerID which we will assign to each consumer in the group;
+    uint32_t generationID; // lets say a consumer gets kicked out and then it again reconnects and tries to save the
+                           // commit offest, i might change teh newly assigned consumer data. Because the main intial
+                           // design was to ensure that a partition is only assigned to one consumer at a time.
+};
 
 // Serialization
 std::vector<uint8_t> serializeRequestHeader(const RequestHeader &reqHeader);
@@ -71,6 +81,7 @@ ProducePayload deserializeProducePayload(const std::vector<uint8_t> &buffer, siz
 FetchPayload deserializeFetchPayload(const std::vector<uint8_t> &buffer, size_t &offset);
 OffsetCommitPayload deserializeOffsetCommitPayload(const std::vector<uint8_t> &buffer, size_t &offset);
 OffsetFetchPayload deserializeOffsetFetchPayload(const std::vector<uint8_t> &buffer, size_t &offset);
+HeartBeatPayload deserializeHeartBeatPayload(const std::vector<uint8_t> &buffer, size_t &offset);
 
 // standard FNV-1a hash function
 inline uint32_t fnv1aHash(const std::string &str) {

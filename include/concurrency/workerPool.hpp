@@ -10,6 +10,7 @@
 
 #include "concurrency/diskQueue.hpp"
 #include "concurrency/diskRequest.hpp"
+#include "concurrency/groupCoord.hpp"
 #include "net/protocol.hpp"
 #include "storage/partition.hpp"
 #include "storage/record.hpp"
@@ -24,10 +25,12 @@ class WorkerThread {
         assignedPartitions; // one thread handling one/more partitions
     pubsub::storage::TopicManager *topicManager{nullptr};
     void dispatchRequest(const DiskRequest &request);
+    pubsub::concurrency::GroupCoord *groupCoord{nullptr};
 
   public:
     WorkerThread() = default;
-    explicit WorkerThread(pubsub::storage::TopicManager *tm) : topicManager(tm) {}
+    explicit WorkerThread(pubsub::storage::TopicManager *tm, pubsub::concurrency::GroupCoord *groupCoord)
+        : topicManager(tm), groupCoord(groupCoord) {}
     void assignPartition(pubsub::storage::Partition *partition, const std::string &routingKey);
     void start();
     void submitRequest(DiskRequest diskRequest);
@@ -38,11 +41,14 @@ class WorkerPool {
   private:
     std::vector<std::unique_ptr<WorkerThread>> workers;
     pubsub::storage::TopicManager *topicManager{nullptr};
+    pubsub::concurrency::GroupCoord *groupCoord{nullptr};
 
   public:
-    explicit WorkerPool(size_t numWorkers, pubsub::storage::TopicManager *tm) : topicManager(tm) {
+    explicit WorkerPool(size_t numWorkers, pubsub::storage::TopicManager *tm,
+                        pubsub::concurrency::GroupCoord *groupCoord)
+        : topicManager(tm), groupCoord(groupCoord) {
         for (size_t i = 0; i < numWorkers; ++i) {
-            auto worker = std::make_unique<WorkerThread>(topicManager);
+            auto worker = std::make_unique<WorkerThread>(topicManager, groupCoord);
             workers.push_back(std::move(worker));
         }
     }

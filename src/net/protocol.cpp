@@ -18,6 +18,15 @@ template <typename T> T readFromNetBuffer(const std::vector<uint8_t> &buffer, si
     offset += sizeof(T);
     return value;
 }
+std::string readStringFromNetBuffer(const std::vector<uint8_t> &buffer, size_t &offset) {
+    uint16_t len = readFromNetBuffer<uint16_t>(buffer, offset);
+    if (offset + len > buffer.size()) {
+        throw std::out_of_range("[net/protocol]: Buffer read overflow while reading string");
+    }
+    std::string value(reinterpret_cast<const char *>(buffer.data() + offset), len);
+    offset += len;
+    return value;
+}
 template <typename T> void writeToNetBufferCopyable(std::vector<uint8_t> &buffer, const T &value) {
     static_assert(std::is_trivially_copyable_v<T>, "T must be trivially copyable");
     const uint8_t *ptr = reinterpret_cast<const uint8_t *>(&value);
@@ -101,17 +110,24 @@ std::vector<uint8_t> serializeFetchResponse(uint64_t lastOffset, const std::vect
 
 OffsetCommitPayload deserializeOffsetCommitPayload(const std::vector<uint8_t> &buffer, size_t &offset) {
     OffsetCommitPayload payload;
-    payload.groupID = readFromNetBuffer<std::string>(buffer, offset);
-    payload.topic = readFromNetBuffer<std::string>(buffer, offset);
+    payload.groupID = readStringFromNetBuffer(buffer, offset);
+    payload.topic = readStringFromNetBuffer(buffer, offset);
     payload.partitionID = readFromNetBuffer<uint32_t>(buffer, offset);
     payload.committedLogOffset = readFromNetBuffer<uint64_t>(buffer, offset);
     return payload;
 }
 OffsetFetchPayload deserializeOffsetFetchPayload(const std::vector<uint8_t> &buffer, size_t &offset) {
     OffsetFetchPayload payload;
-    payload.groupID = readFromNetBuffer<std::string>(buffer, offset);
-    payload.topic = readFromNetBuffer<std::string>(buffer, offset);
+    payload.groupID = readStringFromNetBuffer(buffer, offset);
+    payload.topic = readStringFromNetBuffer(buffer, offset);
     payload.partitionID = readFromNetBuffer<uint32_t>(buffer, offset);
+    return payload;
+}
+HeartBeatPayload deserializeHeartBeatPayload(const std::vector<uint8_t> &buffer, size_t &offset) {
+    HeartBeatPayload payload;
+    payload.groupID = readStringFromNetBuffer(buffer, offset);
+    payload.memberID = readStringFromNetBuffer(buffer, offset);
+    payload.generationID = readFromNetBuffer<uint32_t>(buffer, offset);
     return payload;
 }
 
