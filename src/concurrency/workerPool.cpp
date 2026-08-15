@@ -1,3 +1,4 @@
+#include "concurrency/diskRequest.hpp"
 #include "concurrency/workerPool.hpp"
 #include "net/protocol.hpp"
 #include "storage/record.hpp"
@@ -14,52 +15,48 @@ void WorkerThread::assignPartition(pubsub::storage::Partition *partition, const 
 }
 void WorkerThread::dispatchRequest(const DiskRequest &request) {
     {
-        // std::cerr << "[Worker] Dispatching request " << static_cast<int>(request.type) << " " <<
-        // request.getRoutingKey()
-        // << " corrId=" << request.correlationID << "\n";
-        std::shared_lock<std::shared_mutex> lock(assignedPartitionsMutex);
-        auto it = assignedPartitions.find(request.getRoutingKey());
-        if (it == assignedPartitions.end()) {
-            request.sendResponse(pubsub::net::serializeResponse(
-                request.correlationID, net::ErrorCode::PARTITION_NOT_FOUND, std::vector<uint8_t>()));
-            return;
-        }
-        auto *partition = it->second;
-        if (request.type == TaskType::PRODUCE) {
+        std::cerr << "[Worker] Dispatching request " << static_cast<int>(request.type) << " " << request.getRoutingKey()
+                  << " corrId=" << request.correlationID << "\n";
+
+        if (request.type == TaskType::CREATE_TOPIC) {
+            std::cout << "[concurrency/workerPool] Creating new topic: " << request.topicName << " with "
+                      << request.numPartitions << " partitions.\n";
+            topicManager->createTopic(request.topicName, request.numPartitions);
+
+            // registering the partitions to the worker threds
+            for (uint32_t i = 0; i < request.numPartitions; ++i) {
+                pubsub::storage::Partition *newPart = topicManager->getPartition(request.topicName, i);
+                if (newPart) {
+                    workerPool->registerPartition(request.topicName, i, newPart);
+                }
+            }
+            request.sendResponse(
+                pubsub::net::serializeResponse(request.correlationID, pubsub::net::ErrorCode::NONE, {}));
+        } else if (request.type == TaskType::JOIN_GROUP) {
+            std::cout << "[concurrency/workerPool] Joining group: " << request.groupID << "\n";
+            groupCoord->joinGroup(request.groupID, request.memberID, request.topicName, request.sendResponse);
+        } else if (request.type == TaskType::LEAVE_GROUP) {
+            std::cout << "[concurrency/workerPool] Leaving group: " << request.groupID << "\n";
             try {
-                partition->append(request.produceBatch);
-                std::vector<uint8_t> serializedResponse =
-                    pubsub::net::serializeResponse(request.correlationID, net::ErrorCode::NONE, std::vector<uint8_t>());
-                request.sendResponse(serializedResponse);
+                groupCoord->leaveGroup(request.groupID, request.memberID);
+                request.sendResponse(
+                    pubsub::net::serializeResponse(request.correlationID, pubsub::net::ErrorCode::NONE, {}));
             } catch (const std::exception &e) {
-                std::cerr << "[concurrency/workerPool]: Failed to append to partition " << request.getRoutingKey()
-                          << ": " << e.what() << "\n";
+                std::cerr << "[concurrency/workerPool]: Failed to process LEAVE_GROUP: " << e.what() << "\n";
                 request.sendResponse(pubsub::net::serializeResponse(
                     request.correlationID, net::ErrorCode::UNKNOWN_SERVER_ERROR, std::vector<uint8_t>()));
             }
-        } else if (request.type == TaskType::FETCH) {
+        } else if (request.type == TaskType::CONSUMER_HEARTBEAT) {
+            // checking if the consumer that has send the heartbeat was already kicked or not.
             if (not groupCoord->validateGeneration(request.groupID, request.generationID)) {
-                request.sendResponse(pubsub::net::serializeResponse(request.correlationID, net::ErrorCode::REJOIN,
-                                                                    std::vector<uint8_t>()));
+                // i need to tell the consumer to rejoin and now it can get some difference partition
+                request.sendResponse(net::serializeResponse(request.correlationID, pubsub::net::ErrorCode::REJOIN,
+                                                            std::vector<uint8_t>()));
                 return;
             }
-            try {
-                uint64_t tmpLastOffset = partition->getNextOffset();
-                storage::RecordBatch recordBatch;
-                if (partition->read(request.fetchOffset, recordBatch) and recordBatch.numRecords != 0) {
-                    request.sendResponse(pubsub::net::serializeResponse(
-                        request.correlationID, net::ErrorCode::NONE,
-                        net::serializeFetchResponse(tmpLastOffset, storage::serializeRecordBatch(recordBatch))));
-                } else {
-                    request.sendResponse(pubsub::net::serializeResponse(
-                        request.correlationID, net::ErrorCode::UNKNOWN_SERVER_ERROR, std::vector<uint8_t>()));
-                }
-            } catch (const std::exception &e) {
-                std::cerr << "[concurrency/workerPool]: Failed to fetch from partition " << request.getRoutingKey()
-                          << ": " << e.what() << "\n";
-                request.sendResponse(pubsub::net::serializeResponse(
-                    request.correlationID, net::ErrorCode::UNKNOWN_SERVER_ERROR, std::vector<uint8_t>()));
-            }
+            groupCoord->registerHeartBeat(request.groupID, request.memberID);
+            request.sendResponse(pubsub::net::serializeResponse(request.correlationID, pubsub::net::ErrorCode::NONE,
+                                                                std::vector<uint8_t>()));
         } else if (request.type == TaskType::COMMIT_LOG_OFFSET) {
             if (not groupCoord->validateGeneration(request.groupID, request.generationID)) {
                 request.sendResponse(pubsub::net::serializeResponse(request.correlationID, net::ErrorCode::REJOIN,
@@ -67,7 +64,8 @@ void WorkerThread::dispatchRequest(const DiskRequest &request) {
                 return;
             }
             try {
-                std::string offsetKey = net::make_offset_key(request.groupID, request.topicName, request.partitionID);
+                // groupId:topicName:partitionID
+                std::string offsetKey = net::makeOffsetKey(request.groupID, request.topicName, request.partitionID);
                 uint32_t internalPartitionID = pubsub::net::fnv1aHash(offsetKey) % 50;
                 pubsub::storage::Record offsetRecord;
                 offsetRecord.key = offsetKey;
@@ -83,6 +81,8 @@ void WorkerThread::dispatchRequest(const DiskRequest &request) {
                         request.correlationID, pubsub::net::ErrorCode::UNKNOWN_SERVER_ERROR, {}));
                     return;
                 }
+                std::cout << "[concurrency/workerPool]: Committing log offset " << request.committedLogOffset << " for "
+                          << offsetKey << "\n";
                 internalPart->append(internalBatch);
                 topicManager->updateCommitLogOffset(offsetKey, request.committedLogOffset);
                 request.sendResponse(
@@ -99,10 +99,12 @@ void WorkerThread::dispatchRequest(const DiskRequest &request) {
                 return;
             }
             try {
-                std::string offsetKey = net::make_offset_key(request.groupID, request.topicName, request.partitionID);
-                uint64_t commitedLogOffset = topicManager->getCommitLogOffset(offsetKey);
-                std::vector<uint8_t> response_payload(sizeof(uint64_t));
+                std::string offsetKey = net::makeOffsetKey(request.groupID, request.topicName, request.partitionID);
+                int64_t commitedLogOffset = topicManager->getCommitLogOffset(offsetKey);
+                std::vector<uint8_t> response_payload(sizeof(int64_t));
                 std::memcpy(response_payload.data(), &commitedLogOffset, sizeof(int64_t));
+                std::cout << "[concurrency/workerPool]: Fetched log offset " << commitedLogOffset << " for "
+                          << offsetKey << "\n";
                 request.sendResponse(pubsub::net::serializeResponse(request.correlationID, pubsub::net::ErrorCode::NONE,
                                                                     response_payload));
 
@@ -111,43 +113,64 @@ void WorkerThread::dispatchRequest(const DiskRequest &request) {
                 request.sendResponse(pubsub::net::serializeResponse(
                     request.correlationID, net::ErrorCode::UNKNOWN_SERVER_ERROR, std::vector<uint8_t>()));
             }
-        } else if (request.type == TaskType::CONSUMER_HEARTBEAT) {
-            // checking if the consumer that has send the heartbeat was already kicked or not.
-            if (not groupCoord->validateGeneration(request.groupID, request.generationID)) {
-                // i need to tell the consumer to rejoin and now it can get some difference partition
-                request.sendResponse(net::serializeResponse(request.correlationID, pubsub::net::ErrorCode::REJOIN,
-                                                            std::vector<uint8_t>()));
-                return;
+        } else if (request.type == TaskType::PRODUCE || request.type == TaskType::FETCH) {
+            pubsub::storage::Partition *partition = nullptr;
+            {
+                std::shared_lock<std::shared_mutex> lock(assignedPartitionsMutex);
+                auto it = assignedPartitions.find(request.getRoutingKey());
+                if (it == assignedPartitions.end()) {
+                    request.sendResponse(
+                        pubsub::net::serializeResponse(request.correlationID, net::ErrorCode::PARTITION_NOT_FOUND, {}));
+                    return;
+                }
+                partition = it->second;
             }
-            groupCoord->registerHeartBeat(request.groupID, request.memberID);
-            request.sendResponse(pubsub::net::serializeResponse(request.correlationID, pubsub::net::ErrorCode::NONE,
-                                                                std::vector<uint8_t>()));
-        } else if (request.type == TaskType::JOIN_GROUP) {
-            groupCoord->joinGroup(request.groupID, request.memberID, request.topicName, request.sendResponse);
-        } else if (request.type == TaskType::LEAVE_GROUP) {
-            try {
-                groupCoord->leaveGroup(request.groupID, request.memberID);
-                request.sendResponse(
-                    pubsub::net::serializeResponse(request.correlationID, pubsub::net::ErrorCode::NONE, {}));
-            } catch (const std::exception &e) {
-                std::cerr << "[concurrency/workerPool]: Failed to process LEAVE_GROUP: " << e.what() << "\n";
-                request.sendResponse(pubsub::net::serializeResponse(
-                    request.correlationID, net::ErrorCode::UNKNOWN_SERVER_ERROR, std::vector<uint8_t>()));
-            }
-        } else if (request.type == TaskType::CREATE_TOPIC) {
-            std::cout << "[concurrency/workerPool] Creating new topic: " << request.topicName << " with "
-                      << request.numPartitions << " partitions.\n";
-            topicManager->createTopic(request.topicName, request.numPartitions);
+            if (request.type == TaskType::PRODUCE) {
+                try {
+                    partition->append(request.produceBatch);
+                    std::vector<uint8_t> serializedResponse = pubsub::net::serializeResponse(
+                        request.correlationID, net::ErrorCode::NONE, std::vector<uint8_t>());
+                    request.sendResponse(serializedResponse);
+                } catch (const std::exception &e) {
+                    std::cerr << "[concurrency/workerPool]: Failed to append to partition " << request.getRoutingKey()
+                              << ": " << e.what() << "\n";
+                    request.sendResponse(pubsub::net::serializeResponse(
+                        request.correlationID, net::ErrorCode::UNKNOWN_SERVER_ERROR, std::vector<uint8_t>()));
+                }
+            } else if (request.type == TaskType::FETCH) {
+                std::cout << "[concurrency/workerPool]: Fetching log offset " << request.fetchOffset << " for "
+                          << request.getRoutingKey() << " generation " << request.generationID << "\n";
+                if (not groupCoord->validateGeneration(request.groupID, request.generationID)) {
+                    request.sendResponse(pubsub::net::serializeResponse(request.correlationID, net::ErrorCode::REJOIN,
+                                                                        std::vector<uint8_t>()));
+                    return;
+                }
+                try {
+                    uint64_t tmpLastOffset = partition->getNextOffset();
+                    storage::RecordBatch recordBatch;
+                    if (partition->read(request.fetchOffset, recordBatch) and recordBatch.numRecords != 0) {
 
-            // registering the partitions to the worker threds
-            for (uint32_t i = 0; i < request.numPartitions; ++i) {
-                pubsub::storage::Partition *newPart = topicManager->getPartition(request.topicName, i);
-                if (newPart) {
-                    workerPool->registerPartition(request.topicName, i, newPart);
+                        std::cout << "Sent response for fetch request: lastOffset=" << tmpLastOffset
+                                  << ", numRecords=" << recordBatch.numRecords << "\n";
+                        for (size_t i = 0; i < recordBatch.records.size(); ++i) {
+                            std::cout << "  record " << i << ": offset=" << recordBatch.records[i].recordOffsetDelta
+                                      << " key=" << recordBatch.records[i].key
+                                      << " value=" << recordBatch.records[i].value << "\n";
+                        }
+                        request.sendResponse(pubsub::net::serializeResponse(
+                            request.correlationID, net::ErrorCode::NONE,
+                            net::serializeFetchResponse(tmpLastOffset, storage::serializeRecordBatch(recordBatch))));
+                    } else {
+                        request.sendResponse(pubsub::net::serializeResponse(
+                            request.correlationID, net::ErrorCode::UNKNOWN_SERVER_ERROR, std::vector<uint8_t>()));
+                    }
+                } catch (const std::exception &e) {
+                    std::cerr << "[concurrency/workerPool]: Failed to fetch from partition " << request.getRoutingKey()
+                              << ": " << e.what() << "\n";
+                    request.sendResponse(pubsub::net::serializeResponse(
+                        request.correlationID, net::ErrorCode::UNKNOWN_SERVER_ERROR, std::vector<uint8_t>()));
                 }
             }
-            request.sendResponse(
-                pubsub::net::serializeResponse(request.correlationID, pubsub::net::ErrorCode::NONE, {}));
         }
     }
 }
@@ -180,9 +203,26 @@ void WorkerPool::registerPartition(const std::string &topicName, uint32_t partit
 }
 // epoll thread will call this to drop requests onto the correct worker
 void WorkerPool::routeRequest(DiskRequest diskRequest) {
-    uint32_t workerID = (std::hash<std::string>{}(diskRequest.topicName) + diskRequest.partitionID) % workers.size();
-    std::cerr << "[concurreny/WorkerPool] routing request to worker " << workerID
-              << " (routing key: " << diskRequest.getRoutingKey() << ")\n";
+    uint32_t workerID = 0;
+    // all the reqs related to data goes through this block
+    if (diskRequest.type == TaskType::PRODUCE || diskRequest.type == TaskType::FETCH) {
+        std::cerr << "[concurrency/WorkerPool] routing DATA request to worker " << workerID
+                  << " (routing key: " << diskRequest.getRoutingKey() << ")\n";
+        workerID = (std::hash<std::string>{}(diskRequest.topicName) + diskRequest.partitionID) % workers.size();
+    }
+    // all the reqs related to group coordinator goes through this block
+    else if (diskRequest.type == TaskType::JOIN_GROUP || diskRequest.type == TaskType::LEAVE_GROUP ||
+             diskRequest.type == TaskType::CONSUMER_HEARTBEAT || diskRequest.type == TaskType::COMMIT_LOG_OFFSET ||
+             diskRequest.type == TaskType::FETCH_LOG_OFFSET) {
+        std::cerr << "[concurrency/WorkerPool] routing GROUP request to worker " << workerID
+                  << " (group: " << diskRequest.groupID << ")\n";
+        workerID = std::hash<std::string>{}(diskRequest.groupID) % workers.size();
+    }
+    // all the reqs related to admin goes through this block
+    else if (diskRequest.type == TaskType::CREATE_TOPIC) {
+        std::cerr << "[concurrency/WorkerPool] routing ADMIN request to worker " << workerID << "\n";
+        workerID = std::hash<std::string>{}(diskRequest.topicName) % workers.size();
+    }
     workers[workerID]->submitRequest(std::move(diskRequest));
 }
 void WorkerPool::shutDown() {

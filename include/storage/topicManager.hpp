@@ -69,6 +69,7 @@ class TopicManager {
     void createTopic(const std::string &topicName, uint32_t numPartitions) {
         std::unique_lock<std::shared_mutex> lock(topicManagerMU);
         for (uint32_t partitionId = 0; partitionId < numPartitions; partitionId++) {
+            // if the topic already exists and the partition is already loaded, skip it
             if (topicPartitionMap.find(topicName) != topicPartitionMap.end() &&
                 topicPartitionMap[topicName].find(partitionId) != topicPartitionMap[topicName].end()) {
                 continue;
@@ -127,7 +128,9 @@ class TopicManager {
     int64_t getCommitLogOffset(const std::string &key) {
         std::shared_lock<std::shared_mutex> lock(commitLogOffsetMapMU);
         auto it = commitLogOffsetMap.find(key);
+        std::cout << "[storage/topicManager] Looking for commit log offset for " << key << "\n";
         if (it != commitLogOffsetMap.end()) {
+            std::cout << "[storage/topicManager] Found commit log offset " << it->second << " for " << key << "\n";
             return it->second;
         }
         return -1;

@@ -9,6 +9,7 @@
 #include <memory>
 #include <string>
 #include <sys/stat.h>
+#include <unistd.h>
 #include <vector>
 
 namespace pubsub::storage {

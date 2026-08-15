@@ -46,6 +46,10 @@ struct FetchPayload {
     std::string topic;
     uint32_t partitionID;
     uint64_t fetchOffset; // offset to start fetching from
+
+    // the below fields are used to verify that a valid consumer is fetching
+    std::string groupID;
+    uint32_t generationID;
 };
 struct FetchResponse {
     uint64_t lastOffset; // highest offset in log file
@@ -62,6 +66,7 @@ struct OffsetFetchPayload {
     std::string groupID;
     std::string topic;
     uint32_t partitionID;
+    uint32_t generationID;
 };
 struct HeartBeatPayload {
     std::string groupID;
@@ -74,6 +79,7 @@ struct JoinGroupPayload {
     std::string groupID;
     std::string memberID;
     uint32_t generationID;
+    std::string topicName;
 };
 struct LeaveGroupPayload {
     std::string groupID;
@@ -114,7 +120,7 @@ inline uint32_t fnv1aHash(const std::string &str) {
     return hash;
 }
 
-inline std::string make_offset_key(const std::string &group_id, const std::string &topic, uint32_t partition) {
+inline std::string makeOffsetKey(const std::string &group_id, const std::string &topic, uint32_t partition) {
     return group_id + ":" + topic + ":" + std::to_string(partition);
 }
 

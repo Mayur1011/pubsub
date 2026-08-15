@@ -19,6 +19,7 @@ template <typename T> T readFromNetBuffer(const std::vector<uint8_t> &buffer, si
     return value;
 }
 std::string readStringFromNetBuffer(const std::vector<uint8_t> &buffer, size_t &offset) {
+    // ensure that when sending req from client each string field should be beginning with a uint16_t length
     uint16_t len = readFromNetBuffer<uint16_t>(buffer, offset);
     if (offset + len > buffer.size()) {
         throw std::out_of_range("[net/protocol]: Buffer read overflow while reading string");
@@ -74,6 +75,8 @@ std::vector<uint8_t> serializeFetchPayload(const FetchPayload &payload) {
     writeToNetBufferString(serializedBuffer, payload.topic);
     writeToNetBufferCopyable<uint32_t>(serializedBuffer, payload.partitionID);
     writeToNetBufferCopyable<uint64_t>(serializedBuffer, payload.fetchOffset);
+    writeToNetBufferString(serializedBuffer, payload.groupID);
+    writeToNetBufferCopyable<uint32_t>(serializedBuffer, payload.generationID);
     return serializedBuffer;
 }
 std::vector<uint8_t> serializeFetchRequest(const RequestHeader &reqHeader, const FetchPayload &payload) {
@@ -122,6 +125,7 @@ OffsetFetchPayload deserializeOffsetFetchPayload(const std::vector<uint8_t> &buf
     payload.groupID = readStringFromNetBuffer(buffer, offset);
     payload.topic = readStringFromNetBuffer(buffer, offset);
     payload.partitionID = readFromNetBuffer<uint32_t>(buffer, offset);
+    payload.generationID = readFromNetBuffer<uint32_t>(buffer, offset);
     return payload;
 }
 HeartBeatPayload deserializeHeartBeatPayload(const std::vector<uint8_t> &buffer, size_t &offset) {
@@ -136,6 +140,7 @@ JoinGroupPayload deserializeJoinGroupPayload(const std::vector<uint8_t> &buffer,
     payload.groupID = readStringFromNetBuffer(buffer, offset);
     payload.memberID = readStringFromNetBuffer(buffer, offset);
     payload.generationID = readFromNetBuffer<uint32_t>(buffer, offset);
+    payload.topicName = readStringFromNetBuffer(buffer, offset);
     return payload;
 }
 LeaveGroupPayload deserializeLeaveGroupPayload(const std::vector<uint8_t> &buffer, size_t &offset) {
@@ -204,6 +209,9 @@ FetchPayload deserializeFetchPayload(const std::vector<uint8_t> &buffer, size_t 
     offset += topicLen;
     payload.partitionID = readFromNetBuffer<uint32_t>(buffer, offset);
     payload.fetchOffset = readFromNetBuffer<uint64_t>(buffer, offset);
+    payload.groupID = readStringFromNetBuffer(buffer, offset);
+    payload.generationID = readFromNetBuffer<uint32_t>(buffer, offset);
+
     return payload;
 }
 

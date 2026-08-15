@@ -95,10 +95,13 @@ class GroupCoord {
             std::string assignedMember = allMembers[p % allMembers.size()];
             group.consumerInfo[assignedMember].assignedPartitions.push_back(p);
         }
-        // sending responses back
+
+        std::cout << "[Coordinator] Rebalanced group " << groupID << " for topic " << currTopicName << " (Generation "
+                  << group.generationID << ")\n";
+        // we need to send the latest generation ID back to consumer so the next time they do any fetch/log request then
+        // they wull have a valid genID.
         for (auto &joinReq : group.joinRequests) {
             std::vector<uint32_t> &parts = group.consumerInfo[joinReq.memberID].assignedPartitions;
-            // Serialize response (GenerationID + list of assigned partitions)
             std::vector<uint8_t> payload;
             payload.resize(sizeof(uint32_t) + sizeof(uint32_t) + (parts.size() * sizeof(uint32_t)));
             uint8_t *ptr = payload.data();
@@ -161,6 +164,8 @@ class GroupCoord {
     // Validate generation IDs for Heartbeats and Commits
     bool validateGeneration(const std::string &groupID, uint32_t requestGeneration) {
         std::shared_lock<std::shared_mutex> lock(mu);
+        std::cout << "[concurrency/groupCoord] validateGeneration: groupID=" << groupID
+                  << " requestGeneration=" << requestGeneration << "\n";
         auto it = activeConsumerGroups.find(groupID);
         if (it != activeConsumerGroups.end()) {
             return requestGeneration == it->second.generationID;

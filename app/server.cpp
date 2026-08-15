@@ -80,11 +80,15 @@ void process_frame(ClientState *conn, std::vector<uint8_t> &frame_vec, int epoll
             diskRequest.produceBatch = pubsub::storage::deserializeRecordBatch(reqPayload.rawRecordBatch);
         } else if (header.requestType == RequestType::FETCH) {
             FetchPayload reqPayload = deserializeFetchPayload(frame_vec, offset);
-            std::cout << "[net/server] FETCH from " << header.clientId << " on " << reqPayload.topic << "\n";
+            std::cout << "[net/server] FETCH from " << header.clientId << " on " << reqPayload.topic
+                      << " with fetchOffset " << reqPayload.fetchOffset << " groupID " << reqPayload.groupID
+                      << " generationID " << reqPayload.generationID << "\n";
             diskRequest.type = pubsub::concurrency::TaskType::FETCH;
             diskRequest.topicName = reqPayload.topic;
             diskRequest.partitionID = reqPayload.partitionID;
             diskRequest.fetchOffset = reqPayload.fetchOffset;
+            diskRequest.groupID = reqPayload.groupID;
+            diskRequest.generationID = reqPayload.generationID;
         } else if (header.requestType == RequestType::COMMIT_LOG_OFFSET) {
             OffsetCommitPayload reqPayload = deserializeOffsetCommitPayload(frame_vec, offset);
             std::cout << "[net/server] OFFSET_COMMIT from " << header.clientId << " for group " << reqPayload.groupID
@@ -94,6 +98,7 @@ void process_frame(ClientState *conn, std::vector<uint8_t> &frame_vec, int epoll
             diskRequest.topicName = reqPayload.topic;
             diskRequest.partitionID = reqPayload.partitionID;
             diskRequest.committedLogOffset = reqPayload.committedLogOffset;
+            diskRequest.generationID = reqPayload.generationID;
         } else if (header.requestType == RequestType::FETCH_LOG_OFFSET) {
             OffsetFetchPayload reqPayload = deserializeOffsetFetchPayload(frame_vec, offset);
             std::cout << "[net/server] OFFSET_FETCH from " << header.clientId << " for group " << reqPayload.groupID
@@ -102,6 +107,7 @@ void process_frame(ClientState *conn, std::vector<uint8_t> &frame_vec, int epoll
             diskRequest.groupID = reqPayload.groupID;
             diskRequest.topicName = reqPayload.topic;
             diskRequest.partitionID = reqPayload.partitionID;
+            diskRequest.generationID = reqPayload.generationID;
         } else if (header.requestType == RequestType::CONSUMER_HEARTBEAT) {
             HeartBeatPayload reqPayload = deserializeHeartBeatPayload(frame_vec, offset);
             diskRequest.type = pubsub::concurrency::TaskType::CONSUMER_HEARTBEAT;
@@ -110,10 +116,13 @@ void process_frame(ClientState *conn, std::vector<uint8_t> &frame_vec, int epoll
             diskRequest.generationID = reqPayload.generationID;
         } else if (header.requestType == RequestType::JOIN_GROUP) {
             JoinGroupPayload reqPayload = deserializeJoinGroupPayload(frame_vec, offset);
+            std::cout << "JOIN_GROUP: groupID=" << reqPayload.groupID << " memberID=" << reqPayload.memberID
+                      << " generationID=" << reqPayload.generationID << std::endl;
             diskRequest.type = pubsub::concurrency::TaskType::JOIN_GROUP;
             diskRequest.groupID = reqPayload.groupID;
             diskRequest.memberID = reqPayload.memberID;
             diskRequest.generationID = reqPayload.generationID;
+            diskRequest.topicName = reqPayload.topicName;
         } else if (header.requestType == RequestType::LEAVE_GROUP) {
             LeaveGroupPayload reqPayload = deserializeLeaveGroupPayload(frame_vec, offset);
             diskRequest.type = pubsub::concurrency::TaskType::LEAVE_GROUP;
@@ -124,14 +133,17 @@ void process_frame(ClientState *conn, std::vector<uint8_t> &frame_vec, int epoll
             diskRequest.type = pubsub::concurrency::TaskType::CREATE_TOPIC;
             diskRequest.topicName = reqPayload.topicName;
             diskRequest.numPartitions = reqPayload.numPartitions;
+            std::cout << "[net/server] CREATE_TOPIC request: topicName=" << diskRequest.topicName
+                      << ", numPartitions=" << diskRequest.numPartitions << std::endl;
         }
-        if (currTopicManager->getPartition(diskRequest.topicName, diskRequest.partitionID) == nullptr) {
-            std::cerr << "[net/server] Rejecting request: Topic/Partition target not found: " << diskRequest.topicName
-                      << ":" << diskRequest.partitionID << "\n";
-            auto response = serializeResponse(header.correlationId, ErrorCode::UNKNOWN_SERVER_ERROR, {});
-            send(conn->fd, response.data(), response.size(), 0);
-            return;
-        }
+        // if (currTopicManager->getPartition(diskRequest.topicName, diskRequest.partitionID) == nullptr) {
+        //     std::cerr << "[net/server] Rejecting request: Topic/Partition target not found: " <<
+        //     diskRequest.topicName
+        //               << ":" << diskRequest.partitionID << "\n";
+        //     auto response = serializeResponse(header.correlationId, ErrorCode::UNKNOWN_SERVER_ERROR, {});
+        //     send(conn->fd, response.data(), response.size(), 0);
+        //     return;
+        // }
         // std::vector<uint8_t> empty_payload;
         // auto response = serializeResponse(header.correlationId, ErrorCode::NONE, empty_payload);
         // send(conn->fd, response.data(), response.size(), 0);
@@ -209,10 +221,10 @@ int main() {
     currTopicManager->recoverCommitLogOffset();
     if (recoveryInfo.empty()) {
         std::cout << "[net/server] No early partitions recovered. Making dummy partitions...\n";
-        currTopicManager->createTopic("orders", 1);
-        currWorkerPool->registerPartition("orders", 0, currTopicManager->getPartition("orders", 0));
-        currTopicManager->createTopic("payments", 1);
-        currWorkerPool->registerPartition("payments", 0, currTopicManager->getPartition("payments", 0));
+        // currTopicManager->createTopic("orders", 1);
+        // currWorkerPool->registerPartition("orders", 0, currTopicManager->getPartition("orders", 0));
+        // currTopicManager->createTopic("payments", 1);
+        // currWorkerPool->registerPartition("payments", 0, currTopicManager->getPartition("payments", 0));
     } else {
         for (const pubsub::storage::RecoveryInfo &info : recoveryInfo) {
             currWorkerPool->registerPartition(info.topicName, info.partitionId, info.partition);

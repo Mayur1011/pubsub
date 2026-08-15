@@ -14,6 +14,8 @@ APP := app/server.cpp
 OBJ := $(patsubst %.cpp,build/%.o,$(SRC)) \
        $(patsubst %.cpp,build/%.o,$(APP))
 
+DEP := $(OBJ:.o=.d)
+
 all: $(TARGET)
 
 $(TARGET): $(OBJ)
@@ -26,6 +28,8 @@ build/%.o: %.cpp
 	# $< means the first prerequisite
 	# $@ means the current target
 	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+-include $(DEP)
 
 run-server: $(TARGET)
 	./$(TARGET)
