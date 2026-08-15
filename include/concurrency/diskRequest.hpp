@@ -8,7 +8,16 @@
 namespace pubsub::concurrency {
 // this struct represent how to request related to disk for the worker thread will look like (this is the struct that
 // will be pushed into diskqueue by epoll n/w theread)
-enum class TaskType { PRODUCE, FETCH, COMMIT_LOG_OFFSET, FETCH_LOG_OFFSET, CONSUMER_HEARTBEAT, JOIN_GROUP };
+enum class TaskType {
+    PRODUCE,
+    FETCH,
+    COMMIT_LOG_OFFSET,
+    FETCH_LOG_OFFSET,
+    CONSUMER_HEARTBEAT,
+    JOIN_GROUP,
+    LEAVE_GROUP,
+    CREATE_TOPIC
+};
 struct DiskRequest {
     TaskType type;
     int clientFD;
@@ -23,6 +32,8 @@ struct DiskRequest {
 
     std::string memberID;
     uint32_t generationID;
+
+    uint32_t numPartitions;
 
     std::function<void(std::vector<uint8_t>)> sendResponse;
     std::string getRoutingKey() const { return topicName + "-" + std::to_string(partitionID); }

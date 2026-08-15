@@ -138,6 +138,18 @@ JoinGroupPayload deserializeJoinGroupPayload(const std::vector<uint8_t> &buffer,
     payload.generationID = readFromNetBuffer<uint32_t>(buffer, offset);
     return payload;
 }
+LeaveGroupPayload deserializeLeaveGroupPayload(const std::vector<uint8_t> &buffer, size_t &offset) {
+    LeaveGroupPayload payload;
+    payload.groupID = readStringFromNetBuffer(buffer, offset);
+    payload.memberID = readStringFromNetBuffer(buffer, offset);
+    return payload;
+}
+CreateTopicPayload deserializeCreateTopicPayload(const std::vector<uint8_t> &buffer, size_t &offset) {
+    CreateTopicPayload payload;
+    payload.topicName = readStringFromNetBuffer(buffer, offset);
+    payload.numPartitions = readFromNetBuffer<uint32_t>(buffer, offset);
+    return payload;
+}
 
 // this func will get a stream buffer from net buffer and deserialize it into a RequestHeader
 RequestHeader deserializeRequestHeader(const std::vector<uint8_t> &buffer, size_t &offset) {

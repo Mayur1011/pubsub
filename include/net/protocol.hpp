@@ -13,6 +13,8 @@ enum class RequestType : uint8_t {
     // that it is still alive.
     CONSUMER_HEARTBEAT = 0x05,
     JOIN_GROUP = 0x06,
+    LEAVE_GROUP = 0x07,
+    CREATE_TOPIC = 0x08,
 };
 enum class ErrorCode : uint8_t {
     NONE = 0x00,
@@ -73,6 +75,14 @@ struct JoinGroupPayload {
     std::string memberID;
     uint32_t generationID;
 };
+struct LeaveGroupPayload {
+    std::string groupID;
+    std::string memberID;
+};
+struct CreateTopicPayload {
+    std::string topicName;
+    uint32_t numPartitions;
+};
 
 // Serialization
 std::vector<uint8_t> serializeRequestHeader(const RequestHeader &reqHeader);
@@ -91,6 +101,8 @@ OffsetCommitPayload deserializeOffsetCommitPayload(const std::vector<uint8_t> &b
 OffsetFetchPayload deserializeOffsetFetchPayload(const std::vector<uint8_t> &buffer, size_t &offset);
 HeartBeatPayload deserializeHeartBeatPayload(const std::vector<uint8_t> &buffer, size_t &offset);
 JoinGroupPayload deserializeJoinGroupPayload(const std::vector<uint8_t> &buffer, size_t &offset);
+LeaveGroupPayload deserializeLeaveGroupPayload(const std::vector<uint8_t> &buffer, size_t &offset);
+CreateTopicPayload deserializeCreateTopicPayload(const std::vector<uint8_t> &buffer, size_t &offset);
 
 // standard FNV-1a hash function
 inline uint32_t fnv1aHash(const std::string &str) {

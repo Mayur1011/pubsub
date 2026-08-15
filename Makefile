@@ -45,5 +45,5 @@ run-test:
 clean:
 	rm -rf build
 
-# is to tell make that these targets are not files, but rather commands to run
+# is to tell make that these targets are not files, but commands to run (who makes such files)
 .PHONY: all run-server run-test clean

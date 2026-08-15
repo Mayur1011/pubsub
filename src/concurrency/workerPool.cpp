@@ -4,9 +4,12 @@
 #include "storage/topicManager.hpp"
 #include <cstdint>
 #include <cstring>
+#include <mutex>
+#include <shared_mutex>
 
 namespace pubsub::concurrency {
 void WorkerThread::assignPartition(pubsub::storage::Partition *partition, const std::string &routingKey) {
+    std::unique_lock<std::shared_mutex> lock(assignedPartitionsMutex);
     assignedPartitions[routingKey] = partition;
 }
 void WorkerThread::dispatchRequest(const DiskRequest &request) {
@@ -14,6 +17,7 @@ void WorkerThread::dispatchRequest(const DiskRequest &request) {
         // std::cerr << "[Worker] Dispatching request " << static_cast<int>(request.type) << " " <<
         // request.getRoutingKey()
         // << " corrId=" << request.correlationID << "\n";
+        std::shared_lock<std::shared_mutex> lock(assignedPartitionsMutex);
         auto it = assignedPartitions.find(request.getRoutingKey());
         if (it == assignedPartitions.end()) {
             request.sendResponse(pubsub::net::serializeResponse(
@@ -120,6 +124,30 @@ void WorkerThread::dispatchRequest(const DiskRequest &request) {
                                                                 std::vector<uint8_t>()));
         } else if (request.type == TaskType::JOIN_GROUP) {
             groupCoord->joinGroup(request.groupID, request.memberID, request.topicName, request.sendResponse);
+        } else if (request.type == TaskType::LEAVE_GROUP) {
+            try {
+                groupCoord->leaveGroup(request.groupID, request.memberID);
+                request.sendResponse(
+                    pubsub::net::serializeResponse(request.correlationID, pubsub::net::ErrorCode::NONE, {}));
+            } catch (const std::exception &e) {
+                std::cerr << "[concurrency/workerPool]: Failed to process LEAVE_GROUP: " << e.what() << "\n";
+                request.sendResponse(pubsub::net::serializeResponse(
+                    request.correlationID, net::ErrorCode::UNKNOWN_SERVER_ERROR, std::vector<uint8_t>()));
+            }
+        } else if (request.type == TaskType::CREATE_TOPIC) {
+            std::cout << "[concurrency/workerPool] Creating new topic: " << request.topicName << " with "
+                      << request.numPartitions << " partitions.\n";
+            topicManager->createTopic(request.topicName, request.numPartitions);
+
+            // registering the partitions to the worker threds
+            for (uint32_t i = 0; i < request.numPartitions; ++i) {
+                pubsub::storage::Partition *newPart = topicManager->getPartition(request.topicName, i);
+                if (newPart) {
+                    workerPool->registerPartition(request.topicName, i, newPart);
+                }
+            }
+            request.sendResponse(
+                pubsub::net::serializeResponse(request.correlationID, pubsub::net::ErrorCode::NONE, {}));
         }
     }
 }

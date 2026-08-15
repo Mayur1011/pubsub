@@ -114,6 +114,16 @@ void process_frame(ClientState *conn, std::vector<uint8_t> &frame_vec, int epoll
             diskRequest.groupID = reqPayload.groupID;
             diskRequest.memberID = reqPayload.memberID;
             diskRequest.generationID = reqPayload.generationID;
+        } else if (header.requestType == RequestType::LEAVE_GROUP) {
+            LeaveGroupPayload reqPayload = deserializeLeaveGroupPayload(frame_vec, offset);
+            diskRequest.type = pubsub::concurrency::TaskType::LEAVE_GROUP;
+            diskRequest.groupID = reqPayload.groupID;
+            diskRequest.memberID = reqPayload.memberID;
+        } else if (header.requestType == RequestType::CREATE_TOPIC) {
+            CreateTopicPayload reqPayload = deserializeCreateTopicPayload(frame_vec, offset);
+            diskRequest.type = pubsub::concurrency::TaskType::CREATE_TOPIC;
+            diskRequest.topicName = reqPayload.topicName;
+            diskRequest.numPartitions = reqPayload.numPartitions;
         }
         if (currTopicManager->getPartition(diskRequest.topicName, diskRequest.partitionID) == nullptr) {
             std::cerr << "[net/server] Rejecting request: Topic/Partition target not found: " << diskRequest.topicName
