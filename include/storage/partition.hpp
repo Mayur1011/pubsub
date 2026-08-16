@@ -20,7 +20,7 @@ class Partition {
     void checkNewSegment(uint64_t recordBatchSize);
 
   public:
-    static const uint64_t SEGMENT_SIZE_LIMIT = 100;
+    static const uint64_t SEGMENT_SIZE_LIMIT = 16 * 1024 * 1024;
     Partition(const std::string &baseDir);
     ~Partition() = default;
     void append(const RecordBatch &recordBatch);

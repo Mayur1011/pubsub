@@ -420,7 +420,6 @@ void run_system_tests() {
     std::memcpy(&lastOffset, msgRes.payload.data(), sizeof(uint64_t));
     std::cout << "  fetch lastOffset=" << lastOffset << ", payloadBytes=" << msgRes.payload.size() << "\n";
     std::cout << "✅ Consumer A successfully read data.\n\n";
-    // print the payload not in hex
     std::cout << "  payload: ";
     for (size_t i = 0; i < msgRes.payload.size(); ++i) {
         std::cout << static_cast<int>(msgRes.payload[i]) << " ";
